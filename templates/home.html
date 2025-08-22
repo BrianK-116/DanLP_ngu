@@ -1,0 +1,244 @@
+<html>
+<head> <!-- It's best practice to have <head> instead of <header> for metadata -->
+    <meta charset="utf-8">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <title>AIO-IR system</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+
+</head>
+<body onload="on_load();">
+    <style>
+        /* --- General and Button Styles (Unchanged) --- */
+        *{
+            margin: 0;
+            box-sizing: border-box; /* Add this for more predictable sizing */
+        }
+        body{
+          margin: 0;
+          font-family: sans-serif;
+        }
+        
+        .custom-btn {
+          color: #fff;
+          border-radius: 5px;
+          font-family: 'Lato', sans-serif;
+          background: transparent;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          position: relative;
+          display: inline-block;
+          box-shadow:inset 2px 2px 2px 0px rgba(255,255,255,.5),
+          7px 7px 20px 0px rgba(0,0,0,.1),
+          4px 4px 5px 0px rgba(0,0,0,.1);
+          outline: none;
+        }
+
+        .btn-13 {
+          background-color: #89d8d3;
+          background-image: linear-gradient(315deg, #89d8d3 0%, #03c8a8 74%);
+          border: none;
+          z-index: 1;
+        }
+        .btn-13:after {
+          position: absolute; content: ""; width: 100%; height: 0; bottom: 0;
+          left: 0; z-index: -1; border-radius: 5px; background-color: #4dccc6;
+          background-image: linear-gradient(315deg, #4dccc6 0%, #96e4df 74%);
+          box-shadow: -7px -7px 20px 0px #fff9, -4px -4px 5px 0px #fff9,
+          7px 7px 20px 0px #0002, 4px 4px 5px 0px #0001;
+          transition: all 0.3s ease;
+        }
+        .btn-13:hover { color: #fff; }
+        .btn-13:hover:after { top: 0; height: 100%; }
+        .btn-13:active { top: 2px; }
+
+        .container{
+          width: 100%;
+          min-height: 100vh; /* Ensure it takes full viewport height */
+          background-color: #e0e5ec;
+        }
+        
+        /* --- Search Bar and Options Styles (Unchanged) --- */
+        .search_container{
+          width: 100%;
+          padding: 20px 0;
+          border-bottom: 5px solid #4dccc6;
+        }
+        .search{
+          width: 95%; margin: auto; display: flex; align-items: center;
+        }
+        .search label{ font-size: 30px; padding: 10px; }
+        .search input[type="text"]{
+          flex-grow: 1; height: 50px; border: none; border-radius: 10px;
+          padding-left: 1%; font-size: 20px;
+        }
+        .search button{
+          width: 130px; height: 50px; border-radius: 10px; margin-left: 20px;
+          color: white; font-size: 20px;
+        }
+        .search_options {
+            text-align: center; margin-top: 15px; color: #333;
+            font-size: 16px;
+        }
+        .search_options label { margin: 0 15px 0 5px; cursor: pointer; }
+        
+        /* --- Image Grid and Hover Effect Styles (MODIFIED) --- */
+        #div_img {
+            display: flex;
+            flex-direction: row;    
+            flex-wrap: wrap;
+            padding: 20px;
+            background-color: #e0e5ec;
+            justify-content: center; /* Center the images in the container */
+        }
+    
+        .container_img_btn {
+            position: relative; /* This is essential */
+            width: 300px; /* Fixed width for consistency */
+            margin: 10px; /* Spacing between images */
+            cursor: pointer;
+            overflow: hidden; /* Keeps sharp corners */
+            border-radius: 5px;
+        }
+        
+        .container_img_btn img {
+            width: 100%;
+            height: auto;
+            display: block; /* Removes bottom space */
+            transition: opacity 0.3s ease;
+        }
+    
+        .container_img_btn .btn_knn {
+            /* Button is now always present, but starts invisible */
+            opacity: 0; 
+            visibility: hidden;
+
+            /* These styles center the button */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            
+            background-color: #4dccc6;
+            color: white;
+            font-size: 16px;
+            padding: 8px 15px;
+            border-radius: 5px;
+            text-align: center;
+            border: 2px solid white;
+            z-index: 10; /* Ensure button is on top of the image */
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+    
+        /* --- The CSS Magic for the Hover Effect --- */
+        /* When you hover over the CONTAINER... */
+        .container_img_btn:hover .btn_knn {
+            /* ...make the button VISIBLE */
+            opacity: 1;
+            visibility: visible;
+        }
+    
+        .container_img_btn:hover img {
+            /* ...and dim the image underneath */
+            opacity: 0.6;
+        }
+    </style>
+    <div class="container">
+        <form action="/textsearch" method="GET" onsubmit="search(event);">
+            <div class="search_container">
+              <div class="search">
+                <label for="text_query">
+                  <i class="fa fa-search" aria-hidden="true"></i>
+                </label>
+                <input id="text_query" name="textquery" type="text" placeholder="Search for anything...">
+                <button class="custom-btn btn-13" type="submit"><span>Search</span></button>
+              </div>
+
+              <div class="search_options">
+                  <strong>Search Type:</strong>
+                  <input type="radio" id="hybrid" name="search_type" value="hybrid" checked>
+                  <label for="hybrid">Hybrid (Best)</label>
+              
+                  <input type="radio" id="visual" name="search_type" value="visual">
+                  <label for="visual">Normal</label>
+              
+                  <input type="radio" id="ocr" name="search_type" value="ocr">
+                  <label for="ocr">OCR</label>
+              </div>
+            </div>
+        </form>
+
+        <div id="div_img">
+            <!-- Images will be injected here by JavaScript -->
+        </div>
+  
+        <div style="height: 5px; width: 100%; background-color: black;"></div>
+        <div id="div_page">
+            <!-- Pagination will be injected here -->
+        </div>
+        <div id="div_total_page"></div>
+        <div style="margin-bottom: 50px;"></div>
+  
+      </div>
+    <script>
+        // Use 'let' or 'const' instead of 'var' for modern JavaScript
+        const data = JSON.parse('{{ data|tojson|safe }}');
+        
+        function add_paging(){
+            // Your paging function is fine, no changes needed here.
+            // ...
+        }
+        
+        // --- MODIFIED add_img() FUNCTION ---
+        function add_img(){
+            const pagefile_list = data['pagefile'];
+            if (!pagefile_list) return; // Guard clause
+            
+            // We removed the onmouseover/onmouseout attributes from the div
+            pagefile_list.forEach((item, index) => {
+                $("#div_img").append(
+                    `<div class="container_img_btn">
+                        <button class="btn_knn" onClick="go_img_search(${item.id})">Find Similar</button>
+                        <img class="hoverImg" src="get_img?fpath=${item.imgpath}">
+                    </div>`
+                )
+            });
+        }
+        
+        // --- DELETED JAVASCRIPT FUNCTIONS ---
+        // The mouseOver() and mouseOut() functions are no longer needed
+        // as their functionality is now handled entirely by CSS.
+
+        function go_img_search(id){
+            // Use _self to open in the same tab, which is usually better UX
+            window.open("/imgsearch?imgid="+id, "_self"); 
+        }
+
+        function on_load(){
+            const url = new URL(window.location.href);
+            // Set the search box value if a query was performed
+            if (url.searchParams.has("textquery")){
+              document.getElementById("text_query").value = url.searchParams.get("textquery");
+            }
+            // Set the radio button to the correct search type
+            if (url.searchParams.has("search_type")){
+                const searchType = url.searchParams.get("search_type");
+                document.querySelector(`input[name="search_type"][value="${searchType}"]`).checked = true;
+            }
+            
+            add_paging();
+            add_img();
+        }
+
+        function search(event){
+            // This function is fine, no changes needed.
+            event.preventDefault();
+            const text_query = document.getElementById('text_query').value;
+            const search_type = document.querySelector('input[name="search_type"]:checked').value;
+            const search_url = "/textsearch?textquery=" + encodeURIComponent(text_query) + "&search_type=" + search_type;
+            window.location.href = search_url;
+        }
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+.venv/
+.vscode/
+myEnv/
+faiss_normal_ViT.bin
+faiss_ocr_ViT.bin

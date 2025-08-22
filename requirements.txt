@@ -1,0 +1,16 @@
+googletrans==4.0.0
+flask==3.1.1
+numpy==2.0.2
+pandas==2.0.3
+opencv-python==4.11.0.86
+underthesea==6.8.4?
+pyvi==0.1.1
+translate==3.6.1
+faiss-cpu==1.11.0
+ftfy==6.1.1
+regex==2023.8.8
+tqdm==4.66.1
+matplotlib== 3.6.0
+langdetect==1.0.9
+rapidfuzz==3.13.0
+transformers-4.52.4
