@@ -2,7 +2,7 @@
 from flask import Flask, render_template, Response, request, send_file, jsonify  # Flask web framework + tiện ích
 import cv2                                  # OpenCV để đọc/hiển thị ảnh
 import os                                   # Làm việc với hệ thống file, biến môi trường
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'    # Chọn GPU id=1 (nếu có). NOTE: Ở dưới Myfaiss đang chạy 'cpu'.
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'    # Chọn GPU id=0 (nếu có). NOTE: Ở dưới Myfaiss đang chạy 'cpu'.
 import numpy as np                           # Xử lý mảng số
 import pandas as pd                          # (Hiện chưa dùng) – để xử lý bảng dữ liệu nếu cần
 import easyocr                               # (Hiện chưa dùng trong file này) – OCR nếu tích hợp thêm
@@ -22,7 +22,7 @@ app = Flask(__name__, template_folder='templates')
 
 ####### CONFIG #########
 # Đọc file ánh xạ id -> đường dẫn ảnh (được tạo sẵn khi build index)
-with open('F:\\AIC25\\code\\AICute1-main\\AICute1-main\\image_path.json') as json_file:
+with open('image_path.json') as json_file:
     json_dict = json.load(json_file)
 
 # Ép key từ string -> int để tiện truy cập theo chỉ số
@@ -43,7 +43,7 @@ print(bin_file_visual)  # Log tên index đang dùng
 # Tham số:
 #   visual_bin_file, ocr_bin_file, dict_id2path, device, translator, clip_model_name
 # NOTE: device hiện là 'cpu' – nếu muốn dùng GPU thì cần index/trả về đúng kiểu GPU và sửa device.
-MyFaiss = Myfaiss(bin_file_visual, bin_file_ocr, DictImagePath, 'cpu', Translation(), "ViT-B/32")
+MyFaiss = Myfaiss(bin_file_visual, bin_file_ocr, DictImagePath, 'cuda', Translation(), "ViT-B/32")
 ########################
 
 # === ROUTES ===
