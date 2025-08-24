@@ -1,201 +1,302 @@
-# === Import các thư viện & module cần thiết ===
-from flask import Flask, render_template, Response, request, send_file, jsonify  # Flask web framework + tiện ích
-import cv2                                  # OpenCV để đọc/hiển thị ảnh
-import os                                   # Làm việc với hệ thống file, biến môi trường
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'    # Chọn GPU id=1 (nếu có). NOTE: Ở dưới Myfaiss đang chạy 'cpu'.
-import numpy as np                           # Xử lý mảng số
-import pandas as pd                          # (Hiện chưa dùng) – để xử lý bảng dữ liệu nếu cần
-import easyocr                               # (Hiện chưa dùng trong file này) – OCR nếu tích hợp thêm
-import glob                                  # (Hiện chưa dùng) – dò file theo pattern
-import json                                  # Đọc/ghi JSON
+# -*- coding: utf-8 -*-
+# app.py — Flask backend tối giản, có comment từng dòng
 
-# Import các module tự viết
-from utils.query_processing import Translation  # Bộ xử lý/biên dịch query (VN/EN…)
-from utils.faiss import Myfaiss                 # Lớp bao FAISS cho tìm kiếm ảnh/text
+from flask import Flask, render_template, request, send_file, abort  # import các hàm Flask
+from pathlib import Path                                            # chuẩn hoá đường dẫn
+import json                                                         # đọc file JSON
+import os, traceback                                                # tiện ích hệ thống + log lỗi
 
-# Tham chiếu nhanh để test route: gọi kèm query index
-# http://0.0.0.0:5001/home?index=0
+# ====== Khởi tạo app & đường dẫn gốc ======
+app = Flask(__name__, template_folder='templates')                  # tạo Flask app, chỉ ra thư mục template
+BASE = Path(__file__).resolve().parent                              # thư mục chứa file app.py
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'                            # chọn GPU nếu cần (không bắt buộc)
 
-# Khởi tạo ứng dụng Flask
-# Nếu muốn tách static riêng: app = Flask(__name__, template_folder='templates', static_folder='static')
-app = Flask(__name__, template_folder='templates')
+# ====== Tải mapping ID->path ảnh ======
+try:                                                                # cố gắng mở image_path.json
+    with open(BASE / 'image_path.json', 'r', encoding='utf-8') as f:# đọc JSON ở cùng cấp với app.py
+        _map = json.load(f)                                         # parse thành dict
+    ID2PATH = {int(k): v for k, v in _map.items()}                  # ép key string -> int
+except Exception:                                                   # nếu lỗi đọc file
+    print("[DATA] Cannot load image_path.json")                     # log lỗi
+    print(traceback.format_exc())                                   # in traceback
+    ID2PATH = {}                                                    # rỗng để không văng 500
 
-####### CONFIG #########
-# Đọc file ánh xạ id -> đường dẫn ảnh (được tạo sẵn khi build index)
-with open('F:\\AIC25\\code\\AICute1-main\\AICute1-main\\image_path.json') as json_file:
-    json_dict = json.load(json_file)
+N_ITEMS = len(ID2PATH)                                              # tổng số ảnh trong index
 
-# Ép key từ string -> int để tiện truy cập theo chỉ số
-DictImagePath = {}
-for key, value in json_dict.items():
-   DictImagePath[int(key)] = value
+# ====== (Tuỳ chọn) FAISS helper ======
+try:                                                                # import lớp tìm kiếm (nếu có)
+    from utils.query_processing import Translation                  # dịch vi↔en
+    from utils.faiss import Myfaiss                                 # wrapper FAISS
+    # đường dẫn 2 index (cùng cấp app.py)
+    VIS_BIN = str(BASE / 'faiss_normal_ViT.bin')                    # index ảnh
+    OCR_BIN = str(BASE / 'faiss_ocr_ViT.bin')                       # index OCR
+    # khởi tạo MyFaiss (ưu tiên CUDA, fallback CPU)
+    try:
+        MF = Myfaiss(VIS_BIN, OCR_BIN, ID2PATH, 'cuda',             # thử CUDA trước
+                     Translation(), "ViT-B/32")                     # backbone CLIP
+    except Exception:
+        print("[FAISS] CUDA failed -> CPU")                         # nếu CUDA fail -> dùng CPU
+        MF = Myfaiss(VIS_BIN, OCR_BIN, ID2PATH, 'cpu',              # khởi tạo CPU
+                     Translation(), "ViT-B/32")                     # backbone CLIP
+    FAISS_OK = True                                                 # cờ cho biết FAISS sẵn sàng
+except Exception:                                                   # nếu không import được
+    print("[FAISS] Not available; search routes will return empty") # thông báo
+    MF = None                                                       # không có MyFaiss
+    FAISS_OK = False         # không sẵn FAISS
+    
 
-# Tổng số ảnh
-LenDictPath = len(DictImagePath)
+# ====== Helpers giữ trạng thái UI ======
+# --- ép object về list Python an toàn (hỗ trợ numpy) ---
+def to_list(x):
+    if x is None:
+        return []
+    # numpy -> list
+    try:
+        import numpy as np
+        if isinstance(x, np.ndarray):
+            return x.tolist()
+        if isinstance(x, np.generic):
+            return [x.item()]
+    except Exception:
+        pass
+    # list/tuple -> list
+    if isinstance(x, (list, tuple)):
+        return list(x)
+    # rơi vào scalar -> bọc list 1 phần tử
+    return [x]
 
-# Đường dẫn/ tên file index FAISS (visual & ocr)
-bin_file_visual = 'faiss_normal_ViT.bin'  # index ảnh (CLIP/ViT)
-bin_file_ocr    = 'faiss_ocr_ViT.bin'     # index OCR (vector hóa text)
+# --- ép 1 phần tử về float an toàn (hỗ trợ numpy/list lồng) ---
+def to_float_scalar(x, default=0.0):
+    try:
+        import numpy as np
+        if isinstance(x, np.generic):
+            return float(x.item())
+        if isinstance(x, np.ndarray):
+            if x.size == 0:
+                return float(default)
+            return float(x.flatten()[0].item())
+    except Exception:
+        pass
+    if isinstance(x, (list, tuple)) and x:
+        return to_float_scalar(x[0], default)
+    try:
+        return float(x)
+    except Exception:
+        return float(default)
+def call_text_search_best_effort(mf, text, k=None, search_type=None):
+    """Thử lần lượt các chữ ký phổ biến: (text,k,search_type) -> (text,k) -> (text)"""
+    try:
+        return mf.text_search(text, k=k, search_type=search_type)   # thử đầy đủ
+    except TypeError:
+        try:
+            return mf.text_search(text, k=k)                        # thiếu search_type
+        except TypeError:
+            try:
+                return mf.text_search(text)                         # chỉ có text
+            except Exception:
+                print("[call_text_search_best_effort] all variants failed")
+                print(traceback.format_exc())
+                return None
 
-print(bin_file_visual)  # Log tên index đang dùng
+# --- Chuẩn hoá kết quả trả về từ Myfaiss về (scores, ids, paths) an toàn ---
+def normalize_ret(ret):
+    """ret có thể là None / tuple / dict. Trả về (scores:list, ids:list, paths:list)."""
+    scores, ids, paths = [], [], []                                 # mặc định rỗng
+    if ret is None:                                                 # nếu None -> giữ rỗng
+        return scores, ids, paths
+    # Dạng dict: {'scores': [...], 'ids': [...], 'paths': [...]}
+    if isinstance(ret, dict):
+        scores = list(ret.get("scores") or [])
+        ids    = list(ret.get("ids")    or [])
+        paths  = list(ret.get("paths")  or [])
+        return scores, ids, paths
+    # Dạng tuple/list
+    if isinstance(ret, (list, tuple)):
+        if len(ret) >= 4:                                           # (scores, ids, _, paths)
+            a, b, _, d = ret
+            scores = list(a) if a is not None else []
+            ids    = list(b) if b is not None else []
+            paths  = list(d) if d is not None else []
+        elif len(ret) == 3:                                         # (a,b,c) – cố đoán trường nào là paths
+            a, b, c = ret
+            # bên nào là list str -> paths
+            def is_paths(x): return isinstance(x, (list, tuple)) and (len(x)==0 or isinstance(x[0], str))
+            if is_paths(a):
+                paths, ids, scores = list(a), list(b or []), list(c or [])
+            elif is_paths(b):
+                ids, paths, scores = list(a or []), list(b), list(c or [])
+            elif is_paths(c):
+                ids, scores, paths = list(a or []), list(b or []), list(c)
+            else:
+                ids, scores, paths = list(a or []), list(b or []), list(c or [])
+        elif len(ret) == 2:                                         # (ids, paths) hoặc (paths, ids)
+            a, b = ret
+            if isinstance(a, (list, tuple)) and a and isinstance(a[0], str):
+                paths, ids = list(a), list(b or [])
+            elif isinstance(b, (list, tuple)) and b and isinstance(b[0], str):
+                ids, paths = list(a or []), list(b)
+            else:
+                ids, paths = list(a or []), list(b or [])
+                scores = [0.0] * min(len(ids), len(paths))
+    return scores, ids, paths
+def get_ui(args):                                                   # gom tham số UI từ query string
+    return {
+        "textquery": args.get("textquery", ""),                     # nội dung ô search
+        "search_type": args.get("search_type", "hybrid"),           # visual|ocr|hybrid
+        "topk": int(args.get("topk", 100)),                         # số kết quả / trang
+        "wvis": float(args.get("wvis", 0.6)),                       # trọng số ảnh
+        "wtxt": float(args.get("wtxt", 0.4)),                       # trọng số text
+        "constraints": args.get("constraints", ""),                 # ràng buộc (nếu dùng)
+    }
 
-# Khởi tạo đối tượng FAISS helper
-# Tham số:
-#   visual_bin_file, ocr_bin_file, dict_id2path, device, translator, clip_model_name
-# NOTE: device hiện là 'cpu' – nếu muốn dùng GPU thì cần index/trả về đúng kiểu GPU và sửa device.
-MyFaiss = Myfaiss(bin_file_visual, bin_file_ocr, DictImagePath, 'cpu', Translation(), "ViT-B/32")
-########################
+def page_bounds(index, total, size):                                # tính phạm vi phần tử cho 1 trang
+    first = max(index, 0) * max(size, 1)                            # vị trí bắt đầu (an toàn)
+    last  = min(first + max(size, 1), total)                        # vị trí kết thúc (exclusive)
+    return first, last                                              # trả về (first, last)
 
-# === ROUTES ===
+# ====== Route: Trang chủ (lưới ảnh tĩnh) ======
+@app.route("/", methods=["GET"], endpoint="home")                   # endpoint tên 'home' cho tiện url_for
+def home():
+    idx = int(request.args.get("index", 0))                         # trang hiện tại (0-based)
+    ui = get_ui(request.args)                                       # lấy tham số UI
+    size = ui["topk"]                                               # số ảnh mỗi trang = topk
+    f, l = page_bounds(idx, N_ITEMS, size)                          # tính phạm vi ảnh
+    results = []                                                    # danh sách kết quả để render
+    for i in range(f, l):                                           # duyệt id trong trang
+        rel = ID2PATH.get(i, "")                                    # path tương đối, ví dụ "data/keyframes/.../001.jpg"
+        results.append({"id": i, "path": rel, "score": 0.0, "ocr": ""}) # object hiển thị (path quan trọng)
+    has_more = l < N_ITEMS                                          # còn trang sau không?
+    return render_template("home.html",                             # render template
+                           results=results,                         # danh sách thẻ ảnh
+                           total=N_ITEMS,                           # tổng ảnh
+                           elapsed=0,                               # thời gian (placeholder)
+                           page=idx,                                # số trang hiện tại
+                           has_more=has_more,                       # có Next không
+                           ui=ui)                                   # trạng thái UI để đổ vào form
 
-# Trang chủ & alias /home
-@app.route('/home')
-@app.route('/')
-def thumbnailimg():
-    print("load_iddoc")  # Log khi vào trang
+# ====== Route: Tìm kiếm ảnh-ảnh ======
+@app.route("/imgsearch", methods=["GET"])
+def imgsearch():
+    ui = get_ui(request.args)                                     # tham số UI để giữ trạng thái
+    idx = int(request.args.get("index", 0))                       # trang hiện tại
+    if not FAISS_OK:
+        return render_template("home.html", results=[], total=0,
+                               elapsed=0, page=idx, has_more=False, ui=ui)
 
-    pagefile = []  # Danh sách item (path + id) để render
+    qid = int(request.args.get("imgid", 0))                       # id ảnh query
 
-    # Lấy tham số "index" từ URL (số trang – page index), mặc định 0
-    index = request.args.get('index')
-    if index == None:
-        index = 0
-    else:
-        index = int(index)
+    try:
+        ret = MF.image_search(qid, k=ui["topk"])                  # gọi search
+    except Exception:
+        print("[/imgsearch] failed"); print(traceback.format_exc())
+        ret = None
 
-    imgperindex = 100  # Số ảnh hiển thị mỗi trang
+    # Chuẩn hoá output về 3 list: scores, ids, paths
+    scores, ids, paths = [], [], []
+    if isinstance(ret, (list, tuple)) and len(ret) >= 4:          # (scores, ids, _, paths)
+        scores, ids, paths = ret[0], ret[1], ret[3]
+    elif isinstance(ret, dict):
+        scores, ids, paths = ret.get("scores"), ret.get("ids"), ret.get("paths")
 
-    # Danh sách đường dẫn ảnh & danh sách id tương ứng cho trang hiện tại
-    page_filelist = []
-    list_idx = []
+    scores = to_list(scores)
+    ids    = to_list(ids)
+    paths  = to_list(paths)
 
-    # Tính khoảng [first_index, last_index) của các id cho trang này
-    # NOTE: Điều kiện dưới đây hơi lạ. Thường nên so với first_index + imgperindex < LenDictPath.
-    if LenDictPath - 1 > index + imgperindex:
-        first_index = index * imgperindex
-        last_index  = index * imgperindex + imgperindex
+    total = min(len(paths), len(ids))
+    size  = max(int(ui["topk"]), 1)
+    first = max(idx, 0) * size
+    last  = min(first + size, total)
 
-        tmp_index = first_index
-        while tmp_index < last_index:
-            page_filelist.append(DictImagePath[tmp_index])  # Thêm đường dẫn ảnh
-            list_idx.append(tmp_index)                      # Lưu id
-            tmp_index += 1
-    else:
-        first_index = index * imgperindex
-        last_index  = LenDictPath  # Trang cuối: cắt về tổng số ảnh
+    out = []
+    for i in range(first, last):
+        s = to_float_scalar(scores[i], 0.0) if i < len(scores) else 0.0
+        _id = ids[i]
+        # ép id về int an toàn (kể cả numpy)
+        try:
+            import numpy as np
+            if isinstance(_id, np.generic):
+                _id = _id.item()
+        except Exception:
+            pass
+        try:
+            _id = int(_id)
+        except Exception:
+            pass
 
-        tmp_index = first_index
-        while tmp_index < last_index:
-            page_filelist.append(DictImagePath[tmp_index])
-            list_idx.append(tmp_index)
-            tmp_index += 1
+        out.append({
+            "id": _id,
+            "path": paths[i],
+            "score": s,
+            "ocr": ""
+        })
 
-    # Gom vào cấu trúc để render: [{imgpath, id}, ...]
-    for imgpath, id in zip(page_filelist, list_idx):
-        pagefile.append({'imgpath': imgpath, 'id': id})
+    has_more = last < total
+    return render_template("home.html",
+                           results=out, total=total, elapsed=0,
+                           page=idx, has_more=has_more, ui=ui)
+# ====== Route: Tìm kiếm text (visual/ocr/hybrid) ======
+@app.route("/textsearch", methods=["GET"])
+def textsearch():
+    ui  = get_ui(request.args)                                     # lấy tham số UI (để giữ trạng thái)
+    idx = int(request.args.get("index", 0))                        # trang hiện tại
 
-    # Tính tổng số trang (làm tròn lên)
-    data = {'num_page': int(LenDictPath / imgperindex) + 1, 'pagefile': pagefile}
+    # Nếu FAISS chưa sẵn hoặc query rỗng -> render trống (HTTP 200)
+    if (not FAISS_OK) or (ui["textquery"].strip() == ""):
+        return render_template("home.html",
+                               results=[], total=0, elapsed=0,
+                               page=idx, has_more=False, ui=ui)
 
-    # Render template 'home.html' với dữ liệu
-    return render_template('home.html', data=data)
+    # Gọi Myfaiss với "best-effort" — không quan tâm hàm có/không nhận search_type
+    ret = call_text_search_best_effort(
+        MF,
+        text=ui["textquery"],
+        k=ui["topk"],
+        search_type=ui["search_type"]
+    )
 
-# Tìm kiếm theo ảnh query (id ảnh)
-@app.route('/imgsearch')
-def image_search():
-    print("image search")
+    # Quan trọng: nếu ret=None, ta vẫn không được unpack; chuẩn hoá an toàn trước
+    scores, ids, paths = normalize_ret(ret)
 
-    pagefile = []
+    # Tính tổng & phân trang (không cho raise khi rỗng)
+    total = min(len(paths), len(ids))
+    size  = max(int(ui["topk"]), 1)
+    first = max(idx, 0) * size
+    last  = min(first + size, total)
 
-    # Lấy id ảnh query từ URL (?imgid=)
-    id_query = int(request.args.get('imgid'))
+    # Lắp dữ liệu ra template
+    out = []
+    for i in range(first, last):
+        s  = float(scores[i]) if i < len(scores) else 0.0
+        _id = ids[i]
+        _id = int(_id) if isinstance(_id, (int, float, str)) and str(_id).isdigit() else _id
+        out.append({"id": _id, "path": paths[i], "score": s, "ocr": ""})
 
-    # Gọi tìm kiếm ảnh-ảnh: trả về danh sách id & path tương tự
-    # Hàm image_search(id_query, k) -> (scores, list_ids, _, list_image_paths)
-    _, list_ids, _, list_image_paths = MyFaiss.image_search(id_query, k=100)
-
-    imgperindex = 100  # (Dùng để tính num_page cho giao diện)
-
-    # Biến kết quả thành mảng [{imgpath, id}, ...]
-    for imgpath, id in zip(list_image_paths, list_ids):
-        pagefile.append({'imgpath': imgpath, 'id': int(id)})
-
-    data = {'num_page': int(LenDictPath / imgperindex) + 1, 'pagefile': pagefile}
-
-    return render_template('home.html', data=data)
-
-# Tìm kiếm theo văn bản
-@app.route('/textsearch')
-def text_search():
-    print("text search")
-
-    pagefile = []
-
-    # Lấy chuỗi text query từ URL (?textquery=)
-    text_query = request.args.get('textquery')
-
-    # --- PHẦN MỚI: cho phép chọn kiểu tìm kiếm qua tham số (?search_type=visual|ocr|hybrid) ---
-    # Mặc định 'hybrid' nếu không truyền
-    search_type = request.args.get('search_type', 'hybrid')
-
-    # Gọi tìm kiếm text -> ảnh theo kiểu đã chọn
-    # Hàm text_search(text, k, search_type) -> (scores, list_ids, _, list_image_paths)
-    _, list_ids, _, list_image_paths = MyFaiss.text_search(text_query, k=100, search_type=search_type)
-    # --- HẾT PHẦN MỚI ---
-
-    imgperindex = 200
-
-    # Biến kết quả thành mảng [{imgpath, id}, ...]
-    for imgpath, id in zip(list_image_paths, list_ids):
-        pagefile.append({'imgpath': imgpath, 'id': int(id)})
-
-    data = {'num_page': int(LenDictPath / imgperindex) + 1, 'pagefile': pagefile}
-
-    return render_template('home.html', data=data)
-
-# Trả ảnh để hiển thị (kèm overlay tên file), dùng như một endpoint "stream" MJPEG
-@app.route('/get_img')
+    has_more = last < total
+    return render_template("home.html",
+                           results=out, total=total, elapsed=0,
+                           page=idx, has_more=has_more, ui=ui)
+# ====== Route: Trả file ảnh theo path tương đối ======
+@app.route("/get_img", methods=["GET"])                              # endpoint tải ảnh
 def get_img():
-    # Lấy full path của ảnh từ URL (?fpath=)
-    fpath = request.args.get('fpath')
+    rel = (request.args.get("fpath") or "").strip()                 # lấy tham số fpath
+    if not rel:                                                     # nếu thiếu fpath
+        abort(400, "Missing fpath")                                 # trả 400
+    p = Path(rel)                                                   # tạo Path từ chuỗi
+    if not p.is_absolute():                                         # nếu là path tương đối
+        p = (BASE / rel).resolve()                                  # ghép với BASE để ra path tuyệt đối
+    try:                                                            # giới hạn trong BASE (bảo mật)
+        _ = p.relative_to(BASE)                                     # nếu vượt BASE sẽ ném lỗi
+    except Exception:
+        abort(403)                                                  # trả 403 nếu vượt
+    if not p.exists():                                              # nếu file không tồn tại
+        abort(404)                                                  # trả 404
+    ext = p.suffix.lower()                                          # lấy đuôi file
+    if ext in (".jpg", ".jpeg"): mime = "image/jpeg"                # đoán MIME
+    elif ext == ".png":         mime = "image/png"                  # PNG
+    elif ext == ".webp":        mime = "image/webp"                 # WEBP
+    else:                       mime = "application/octet-stream"   # mặc định
+    return send_file(p, mimetype=mime, conditional=True)            # trả file ảnh
 
-    # Lấy tên ảnh hiển thị gọn: ghép 2 cấp cuối cùng của đường dẫn (thư mục/video + file)
-    list_image_name = fpath.split("/")
-    image_name = "/".join(list_image_name[-2:])
-
-    # Đọc ảnh: nếu không tồn tại thì trả ảnh 404 mặc định
-    if os.path.exists(fpath):
-        img = cv2.imread(fpath)
-    else:
-        print("load 404.jpg")
-        img = cv2.imread("./static/images/404.jpg")
-
-    # Resize ảnh về 1280x720 cho đồng nhất hiển thị
-    img = cv2.resize(img, (1280, 720))
-
-    # Vẽ text (tên ảnh rút gọn) lên ảnh để người dùng biết nguồn
-    img = cv2.putText(
-        img,
-        image_name,
-        (30, 80),                   # vị trí text (x, y)
-        cv2.FONT_HERSHEY_SIMPLEX,   # font
-        3,                          # scale
-        (255, 0, 0),                # màu (B, G, R): xanh dương đậm
-        4,                          # độ dày nét
-        cv2.LINE_AA                 # anti-aliased
-    )
-
-    # Mã hóa ảnh thành JPEG bytes
-    ret, jpeg = cv2.imencode('.jpg', img)
-
-    # Trả về theo dạng multipart/x-mixed-replace (stream khung hình)
-    return Response(
-        (b'--frame\r\n'
-         b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n\r\n'),
-        mimetype='multipart/x-mixed-replace; boundary=frame'
-    )
-
-# Điểm vào chương trình
-if __name__ == '__main__':
-    # Chạy Flask server ở 0.0.0.0:5001, tắt debug khi chạy production
-    app.run(debug=False, host="0.0.0.0", port=5001)
+# ====== Main ======
+if __name__ == "__main__":                                          # chạy trực tiếp file
+    app.run(debug=False, host="0.0.0.0", port=5001)                 # bật server 0.0.0.0:5001

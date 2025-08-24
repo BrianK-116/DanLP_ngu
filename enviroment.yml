@@ -1,0 +1,20 @@
+name: faiss310
+channels: [pytorch, conda-forge, nvidia, defaults]
+dependencies:
+  - python=3.10
+  - pytorch>=2.1
+  - torchvision
+  - torchaudio
+  - cudatoolkit=12.1     
+  - faiss-cpu>=1.7.4    
+  - pip
+  - pip:
+      - ftfy
+      - regex
+      - tqdm
+      - googletrans==4.0.0rc1
+      - underthesea
+      - opencv-python
+      - Pillow
+      - python-dotenv
+      - git+https://github.com/openai/CLIP.git
