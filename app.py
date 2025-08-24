@@ -1,14 +1,22 @@
 # -*- coding: utf-8 -*-
 # app.py — Flask backend tối giản, có comment từng dòng
 
-from flask import Flask, render_template, request, send_file, abort  # import các hàm Flask
+import bisect
+from flask import Flask, render_template, Response, request, send_file, jsonify, abort, current_app, url_for  # import các hàm Flask
 from pathlib import Path                                            # chuẩn hoá đường dẫn
 import json                                                         # đọc file JSON
-import os, traceback                                                # tiện ích hệ thống + log lỗi
+import os, traceback      
+import re
+from collections import OrderedDict
+from functools import lru_cache
+import csv
+
 
 # ====== Khởi tạo app & đường dẫn gốc ======
 app = Flask(__name__, template_folder='templates')                  # tạo Flask app, chỉ ra thư mục template
 BASE = Path(__file__).resolve().parent                              # thư mục chứa file app.py
+MAP_DIR   = BASE / "data" / "map_keyframes"                         # chứa các CSV vcode.csv
+VIDEOS_RT = BASE / "data" / "videos"                                # gốc thư mục videos
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'                            # chọn GPU nếu cần (không bắt buộc)
 
 # ====== Tải mapping ID->path ảnh ======
@@ -83,6 +91,7 @@ def to_float_scalar(x, default=0.0):
         return float(x)
     except Exception:
         return float(default)
+    
 def call_text_search_best_effort(mf, text, k=None, search_type=None):
     """Thử lần lượt các chữ ký phổ biến: (text,k,search_type) -> (text,k) -> (text)"""
     try:
@@ -97,6 +106,119 @@ def call_text_search_best_effort(mf, text, k=None, search_type=None):
                 print("[call_text_search_best_effort] all variants failed")
                 print(traceback.format_exc())
                 return None
+            
+# --- helper: tách mã video từ đường dẫn keyframe ---
+#   "data/keyframes/Keyframes_L21/L21_V001/020.jpg"  ->  "L21_V001"
+def _video_code_from_path(p: str) -> str:
+    try:
+        return Path(p).parent.name  # thư mục ngay trước filename
+    except Exception:
+        m = re.search(r'(L\d+_V\d+)', str(p))
+        return m.group(1) if m else "unknown"
+
+# --- helper: tách số frame từ tên file ---
+#   ".../020.jpg" -> 20
+def _frame_no_from_path(p: str) -> int:
+    try:
+        name = Path(p).stem
+        m = re.search(r'(\d+)$', name)
+        return int(m.group(1)) if m else -1
+    except Exception:
+        return -1
+
+# --- helper: nhóm list item theo video, sắp xếp tăng dần theo frame ---
+def group_by_video(items):
+    """
+    items: list[{'id', 'path', 'score', 'ocr'?}]
+    return: list[(video_code, [items...])]
+    """
+    bucket = OrderedDict()
+    for r in items:
+        path = r.get("path", "")
+        vcode = _video_code_from_path(path)
+        obj = dict(r)
+        obj["video"] = vcode
+        obj["frame"] = _frame_no_from_path(path)
+        bucket.setdefault(vcode, []).append(obj)
+
+    for k in bucket:
+        bucket[k].sort(key=lambda x: (x.get("frame", -1), x.get("id", 0)))
+
+    # Trả list để template duyệt ổn định theo thứ tự xuất hiện
+    return list(bucket.items())
+def _video_bucket(vcode: str) -> str:
+    # "L25_V085" -> "Videos_L25"
+    try:
+        return f"Videos_{vcode.split('_', 1)[0]}"
+    except Exception:
+        return "Videos_unknown"
+
+@lru_cache(maxsize=512)
+def load_pts_map(vcode: str):
+    """
+    Đọc data/map_keyframes/<vcode>.csv -> {n:int -> pts_time:float (giây)}.
+    - Tìm cột 'n' (chỉ số keyframe) và 'pts_time' (thời gian giây).
+    - Nếu không thấy đúng tên thì thử các alias phổ biến.
+    """
+    path = MAP_DIR / f"{vcode}.csv"
+    if not path.exists():
+        return {}
+
+    with path.open("r", encoding="utf-8") as f:
+        raw = f.read().replace("\r\n", "\n").replace("\r", "\n")
+
+    # thử các delimiter
+    rows = []; reader = None
+    for delim in (",",";","\t","|"):
+        try:
+            reader = csv.DictReader(raw.splitlines(), delimiter=delim)
+            rows = list(reader)
+            if rows and reader.fieldnames: break
+        except Exception:
+            pass
+    if not rows: return {}
+
+    names = [c or "" for c in (reader.fieldnames or [])]
+    def pick(names, cands):
+        for c in names:
+            if c.strip().lower() in cands: return c
+        return None
+
+    N_CANDS = {"n","idx","index","no","num","number","frame_no","frame","kf","kf_idx"}
+    T_CANDS = {"pts_time","time","sec","secs","seconds","ts"}
+
+    ncol = pick(names, N_CANDS)
+    tcol = pick(names, T_CANDS)
+    if not ncol or not tcol: 
+        return {}
+
+    def to_int(x):
+        try:
+            return int(str(x).strip())
+        except Exception:
+            return None
+    def to_float(x):
+        try:
+            return float(str(x).strip().replace(",", "."))
+        except Exception:
+            return None
+
+    mp = {}
+    for r in rows:
+        n = to_int(r.get(ncol))
+        t = to_float(r.get(tcol))
+        if n is None or t is None: continue
+        mp[n] = t
+    return mp
+
+def lookup_time_by_n(vcode: str, n: int):
+    mp = load_pts_map(vcode)
+    if not mp: return None
+    if n in mp: return mp[n]
+    ks = sorted(mp.keys())
+    pos = bisect.bisect_right(ks, n) - 1
+    return mp[ks[pos]] if pos >= 0 else None
+
 
 # --- Chuẩn hoá kết quả trả về từ Myfaiss về (scores, ids, paths) an toàn ---
 def normalize_ret(ret):
@@ -142,11 +264,8 @@ def normalize_ret(ret):
 def get_ui(args):                                                   # gom tham số UI từ query string
     return {
         "textquery": args.get("textquery", ""),                     # nội dung ô search
-        "search_type": args.get("search_type", "hybrid"),           # visual|ocr|hybrid
+        "search_type": args.get("search_type", "visual"),           # visual|ocr|hybrid
         "topk": int(args.get("topk", 100)),                         # số kết quả / trang
-        "wvis": float(args.get("wvis", 0.6)),                       # trọng số ảnh
-        "wtxt": float(args.get("wtxt", 0.4)),                       # trọng số text
-        "constraints": args.get("constraints", ""),                 # ràng buộc (nếu dùng)
     }
 
 def page_bounds(index, total, size):                                # tính phạm vi phần tử cho 1 trang
@@ -165,9 +284,11 @@ def home():
     for i in range(f, l):                                           # duyệt id trong trang
         rel = ID2PATH.get(i, "")                                    # path tương đối, ví dụ "data/keyframes/.../001.jpg"
         results.append({"id": i, "path": rel, "score": 0.0, "ocr": ""}) # object hiển thị (path quan trọng)
-    has_more = l < N_ITEMS                                          # còn trang sau không?
+    has_more = l < N_ITEMS      # còn trang sau không?
+    groups = group_by_video(results) 
     return render_template("home.html",                             # render template
-                           results=results,                         # danh sách thẻ ảnh
+                           results=results,                          # danh sách thẻ ảnh
+                           groups=groups,                          
                            total=N_ITEMS,                           # tổng ảnh
                            elapsed=0,                               # thời gian (placeholder)
                            page=idx,                                # số trang hiện tại
@@ -230,9 +351,10 @@ def imgsearch():
             "ocr": ""
         })
 
+    groups = group_by_video(out)
     has_more = last < total
     return render_template("home.html",
-                           results=out, total=total, elapsed=0,
+                           results=out, groups=groups, total=total, elapsed=0,
                            page=idx, has_more=has_more, ui=ui)
 # ====== Route: Tìm kiếm text (visual/ocr/hybrid) ======
 @app.route("/textsearch", methods=["GET"])
@@ -272,8 +394,9 @@ def textsearch():
         out.append({"id": _id, "path": paths[i], "score": s, "ocr": ""})
 
     has_more = last < total
+    groups = group_by_video(out)
     return render_template("home.html",
-                           results=out, total=total, elapsed=0,
+                           results=out, groups=groups, total=total, elapsed=0,
                            page=idx, has_more=has_more, ui=ui)
 # ====== Route: Trả file ảnh theo path tương đối ======
 @app.route("/get_img", methods=["GET"])                              # endpoint tải ảnh
@@ -296,6 +419,62 @@ def get_img():
     elif ext == ".webp":        mime = "image/webp"                 # WEBP
     else:                       mime = "application/octet-stream"   # mặc định
     return send_file(p, mimetype=mime, conditional=True)            # trả file ảnh
+
+@app.route("/get_video")
+def get_video():
+    vcode = (request.args.get("vcode") or "").strip()
+    if not vcode: abort(400, "Missing vcode")
+    bucket = _video_bucket(vcode)   # Videos_L25
+    fpath  = VIDEOS_RT / bucket / f"{vcode}.mp4"
+    if not fpath.exists(): abort(404, "Video not found")
+    return send_file(fpath, mimetype="video/mp4", conditional=True)
+
+@app.route("/watch")
+def watch():
+    vcode = (request.args.get("vcode") or "").strip()
+    try:
+        n = int(request.args.get("frame")) if request.args.get("frame") else None
+    except Exception:
+        n = None
+    if not vcode: abort(400, "Missing vcode")
+
+    pts = lookup_time_by_n(vcode, n) if n is not None else None
+    video_src = url_for("get_video", vcode=vcode)
+    fragment  = f"#t={pts:.3f}" if isinstance(pts,(int,float)) else ""
+
+    return render_template("player.html",
+                           video_src=video_src + fragment,
+                           pts_time=pts, vcode=vcode, frame=n)
+    
+@app.route("/frame_time")
+def frame_time():
+    vcode = (request.args.get("vcode") or "").strip()
+    try:
+        n = int(request.args.get("frame"))
+    except Exception:
+        abort(400, "Missing or invalid frame")
+    if not vcode: abort(400, "Missing vcode")
+    t = lookup_time_by_n(vcode, n)
+    return jsonify({"vcode": vcode, "n": n, "time": t})
+
+@app.route("/debug_map")
+def debug_map():
+    vcode = (request.args.get("vcode") or "").strip()
+    if not vcode:
+        return jsonify(error="Missing vcode"), 400
+    mp = load_pts_map.cache_clear() or load_pts_map(vcode)  # clear cache để đọc lại nếu CSV vừa đổi
+    mp = load_pts_map(vcode)
+    # lấy 10 cặp đầu & 10 cuối để soi
+    keys = sorted(mp.keys())
+    head = [{ "frame": k, "time": mp[k] } for k in keys[:10]]
+    tail = [{ "frame": k, "time": mp[k] } for k in keys[-10:]]
+    return jsonify({
+        "vcode": vcode,
+        "count": len(keys),
+        "head": head,
+        "tail": tail
+    })
+
 
 # ====== Main ======
 if __name__ == "__main__":                                          # chạy trực tiếp file

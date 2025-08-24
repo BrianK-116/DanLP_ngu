@@ -1,0 +1,119 @@
+/* ===== Base custom styles ===== */
+:root{
+  --slate-50:  #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-400: #94a3b8;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1f2937;
+  --blue-50:   #eff6ff;
+  --blue-600:  #2563eb;
+  --blue-700:  #1d4ed8;
+  --border:    #e5e7eb;
+  --radius:    0.5rem;
+  --shadow:    0 6px 24px rgba(0,0,0,.08);
+}
+
+.box { box-shadow: var(--shadow); }
+
+.chip{
+  background: var(--border);
+  padding: .25rem .5rem;
+  border-radius: 999px;
+  font-size: .75rem;
+  line-height: 1rem;
+}
+
+.g { display:grid; gap:.75rem; }
+.g-cols { grid-template-columns: repeat(4, minmax(0,1fr)); }
+@media (max-width: 1024px){ .g-cols { grid-template-columns: repeat(3, 1fr);} }
+@media (max-width: 768px){  .g-cols { grid-template-columns: repeat(2, 1fr);} }
+
+.clamp-1{
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.card:focus{ outline: 2px solid var(--blue-600); outline-offset: 2px; }
+
+.obj-cover{ object-fit: cover; }
+.jc-between{ justify-content: space-between; }
+
+/* ===== Reusable components (thuần CSS, không dùng @apply) ===== */
+.btn-blue{
+  background: var(--blue-600);
+  color: #fff;
+  font-size: .875rem;
+  padding: .5rem 1rem;
+  border-radius: .375rem;
+  border: 1px solid transparent;
+  transition: background .15s ease;
+}
+.btn-blue:hover{ background: var(--blue-700); }
+.btn-blue[disabled]{ opacity:.5; cursor:not-allowed; }
+
+.btn-outline{
+  border: 1px solid var(--border);
+  background: transparent;
+  font-size: .75rem;
+  padding: .5rem .75rem;
+  border-radius: .375rem;
+  transition: background .15s ease;
+}
+.btn-outline:hover{ background: var(--slate-50); }
+.btn-outline[disabled]{ opacity:.5; cursor:not-allowed; }
+
+.card-thumb{
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+
+/* ===== Layout helpers ===== */
+.toolbar-sticky{
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--slate-50);
+}
+
+.sidebar{
+  position: sticky;
+  top: 8rem;            /* ~lg:top-32 */
+  align-self: start;
+  max-height: calc(100vh - 6rem);
+  overflow: auto;
+}
+
+.preview{
+  position: sticky;
+  top: 8rem;
+  align-self: start;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+
+.media-box{
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: var(--slate-100);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.preview-actions{
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background: #fff;
+  padding-top: .5rem;
+}

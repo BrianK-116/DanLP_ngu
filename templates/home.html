@@ -4,34 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UTEvuive_search</title>
+   <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    .box { box-shadow: 0 6px 24px rgba(0,0,0,.08); }
-    .chip{ background:#e5e7eb; padding:.25rem .5rem; border-radius:999px; }
-    .g { display:grid; gap:.75rem; }
-    .g-cols { grid-template-columns: repeat(4, minmax(0,1fr)); }
-    @media (max-width: 1024px){ .g-cols { grid-template-columns: repeat(3, 1fr);} }
-    @media (max-width: 768px){ .g-cols { grid-template-columns: repeat(2, 1fr);} }
-    .clamp-1 {
-      display: -webkit-box;
-      -webkit-line-clamp: 1;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: normal;}
-    .card:focus { outline: 2px solid #2563eb; outline-offset: 2px; } /* viền xanh khi focus */
-    .obj-cover{ object-fit: cover; }                                  /* alias cho gọn lớp */
-    .jc-between{ justify-content: space-between; }                    /* alias cho gọn lớp */
-  </style>
-</head>
-<body class="bg-slate-50 text-slate-800">
 
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body class="bg-slate-50 text-slate-800">
   <!-- Header -->
-  <header class="bg-white border-b">
-    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+  <header class="bg-white border-b px-6 py-3">
+    <div class="flex items-center gap-3">
       <a href="{{ url_for('home') }}" class="flex items-center gap-2 font-semibold">
-        <span class="inline-block w-7 h-7 rounded bg-blue-600"></span>
-        <span>Visione-style</span>
+        <img src="{{ url_for('static', filename='images/logo.png') }}"
+          alt="Logo"
+          class="inline-block w-12 h-12 rounded-full">
+        <span>UTE vui vẻ tìm kiếm</span>
       </a>
       <nav class="ml-auto hidden md:flex gap-2 text-sm">
         <span class="px-3 py-1 rounded hover:bg-slate-100 cursor-default">Docs</span>
@@ -42,9 +31,8 @@
   </header>
 
   <!-- Toolbar -->
-  <section class="max-w-6xl mx-auto px-4 pt-5">
+  <section class="toolbar-sticky px-4 pt-5 pb-3 border-b">
     <div class="flex flex-col md:flex-row md:items-center gap-3">
-
       <!-- Tabs -->
       <div class="bg-white border rounded p-1 box flex gap-1">
         <span class="px-3 py-1 rounded border bg-blue-50 text-blue-700 text-sm">KIS</span>
@@ -69,13 +57,10 @@
           class="w-full bg-white border rounded px-3 py-3 pr-28 box"
           autocomplete="off">
         <div class="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
-          <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded">Search</button>
+          <button type="submit" class="btn-blue">Search</button>
         </div>
-        <input type="hidden" name="search_type" value="{{ ui.search_type if ui else 'hybrid' }}">
+        <input type="hidden" name="search_type" value="{{ ui.search_type if ui else 'visual' }}">
         <input type="hidden" name="topk"        value="{{ ui.topk if ui else 100 }}">
-        <input type="hidden" name="wvis"        value="{{ ui.wvis if ui else 0.6 }}">
-        <input type="hidden" name="wtxt"        value="{{ ui.wtxt if ui else 0.4 }}">
-        <input type="hidden" name="constraints" value="{{ ui.constraints if ui else '' }}">
         <input type="hidden" name="index"       value="0">
       </form>
     </div>
@@ -90,20 +75,22 @@
   </section>
 
   <!-- Main -->
-  <main class="max-w-6xl mx-auto px-4 pt-4 pb-10 grid lg:grid-cols-12 gap-3">
+  <!-- Main: dùng flex để điều khiển 3 cột -->
+  <main class="px-6 pt-4 pb-10 flex gap-4">
 
-    <!-- Filters -->
-    <aside class="lg:col-span-3 bg-white border rounded p-3 box">
+    <!-- ===== LEFT: FILTERS (sticky, ~1/8 màn hình) ===== -->
+    <aside class="shrink-0 w-[12.5vw] min-w-[220px]
+                    lg:sticky lg:top-20 self-start
+                  max-h-[calc(100vh-6rem)] overflow-auto
+                  bg-white border rounded p-3 box">
       <div class="text-sm font-semibold mb-2">Filters</div>
+
+      <!-- Search type -->
       <div class="mb-3">
         <div class="text-sm mb-1">Search type</div>
-        <div class="grid grid-cols-3 gap-2">
+        <div class="grid grid-cols-2 gap-2">
           <label class="border rounded p-2 flex gap-2 items-center">
-            <input type="radio" name="stype" value="hybrid" {{ 'checked' if (ui and ui.search_type=='hybrid') or (not ui) else '' }}>
-            <span class="text-sm">Hybrid</span>
-          </label>
-          <label class="border rounded p-2 flex gap-2 items-center">
-            <input type="radio" name="stype" value="visual" {{ 'checked' if (ui and ui.search_type=='visual') else '' }}>
+            <input type="radio" name="stype" value="visual" {{ 'checked' if (ui and ui.search_type=='visual') or (not ui) else '' }}>
             <span class="text-sm">Visual</span>
           </label>
           <label class="border rounded p-2 flex gap-2 items-center">
@@ -112,29 +99,20 @@
           </label>
         </div>
       </div>
+
+      <!-- Top-K -->
       <div class="mb-3">
-        <div class="text-sm mb-1">Top-K</div>
-        <input id="topk" type="range" min="10" max="500" step="10" value="{{ ui.topk if ui else 100 }}" class="w-full">
+        <div class="text-sm mb-1">Top‑K</div>
+        <input id="topk" type="range" min="10" max="500" step="10"
+              value="{{ ui.topk if ui else 100 }}" class="w-full">
         <div class="flex justify-between text-xs text-slate-500">
           <span>10</span><span id="topkLabel">{{ ui.topk if ui else 100 }}</span><span>500</span>
         </div>
       </div>
-      <div class="mb-3">
-        <div class="text-sm mb-1">RRF (w<sub>vis</sub> / w<sub>txt</sub>)</div>
-        <div class="flex gap-2 items-center">
-          <input id="wvis" type="number" step="0.1" class="border rounded px-2 py-1 w-20" value="{{ ui.wvis if ui else 0.6 }}">
-          <span>/</span>
-          <input id="wtxt" type="number" step="0.1" class="border rounded px-2 py-1 w-20" value="{{ ui.wtxt if ui else 0.4 }}">
-        </div>
-      </div>
-      <div class="mb-2">
-        <div class="text-sm mb-1">Constraints</div>
-        <input id="constraints" type="text" class="border rounded px-2 py-2 w-full" placeholder="car, red; text:pizza" value="{{ ui.constraints if ui else '' }}">
-      </div>
     </aside>
 
-    <!-- Results -->
-    <section class="lg:col-span-6">
+    <!-- ===== CENTER: RESULTS — THEO HÀNG/VIDEO ===== -->
+    <section class="flex-1 min-w-0">
       <div class="flex items-center justify-between text-sm text-slate-500 mb-2">
         <div><b class="text-slate-700">{{ total or 0 }}</b> results in {{ elapsed or 0 }} ms</div>
         <div class="flex items-center gap-2">
@@ -146,164 +124,132 @@
         </div>
       </div>
 
-      <!-- Lưới ảnh -->
-    <div class="g g-cols">
-      {% for r in results or [] %}
-      <!-- thẻ ảnh: thêm data-* để JS lấy lại thông tin khi click -->
-      <div
-        class="card bg-white border rounded overflow-hidden box cursor-pointer"
-        tabindex="0"                                        
-        data-id="{{ r['id'] }}"                             
-        data-path="{{ r['path'] }}"                         
-        data-score="{{ r.get('score', 0.0) }}"              
-        onclick="onPick(this)"                              
-        onkeydown="if(event.key==='Enter'||event.key===' '){onPick(this)}"  
-      >
-        <!-- ảnh thu nhỏ -->
-        <img
-          src="{{ url_for('get_img', fpath=r['path']) }}"    
-          alt="id {{ r['id'] }}"
-          class="w-full h-40 obj-cover"
-          loading="lazy"
-        >
-        <!-- thông tin nhỏ dưới ảnh -->
-        <div class="p-2 text-xs text-slate-600">
-          <div class="flex jc-between">
-            <span>ID: <b class="text-slate-800">{{ r['id'] }}</b></span>
-            <span>Score: {{ '%.4f'|format(r.get('score', 0.0)) }}</span>
+      {# ========== Mỗi HÀNG = 1 VIDEO (vcode), các keyframe xếp ngang ========== #}
+      {% if groups %}
+        {% for vcode, items in groups %}
+        <div class="mb-4 bg-white border rounded box">
+          <!-- Header của hàng -->
+          <div class="flex items-center justify-between px-3 py-2 border-b">
+            <div class="text-sky-600 font-semibold">{{ vcode }}</div>
+            <div class="text-xs text-slate-500">{{ items|length }} frames</div>
           </div>
-          {% if r.get('ocr') %}
-          <div class="mt-1 line-clamp-1">🅾️ {{ r['ocr'] }}</div>
-          {% endif %}
+
+          <!-- Strip keyframes ngang (scroll khi dài) -->
+          <div class="px-2 py-2 grid grid-flow-col auto-cols-[160px] gap-2 overflow-x-auto">
+            {% for r in items %}
+            <div class="card border rounded overflow-hidden bg-white cursor-pointer"
+                tabindex="0"
+                data-id="{{ r['id'] }}"
+                data-path="{{ r['path'] }}"
+                data-score="{{ r.get('score', 0.0) }}"
+                data-frame="{{ r.get('frame', 0) }}"
+                onclick="onPick(this)"
+                onkeydown="if(event.key==='Enter'||event.key===' '){onPick(this)}">
+              <img
+                src="{{ url_for('get_img', fpath=r['path']) }}"
+                alt="id {{ r['id'] }}"
+                class="w-[160px] h-[100px] object-cover"
+                loading="lazy">
+              <div class="px-1 py-1 text-[11px] text-slate-600 flex justify-between">
+                <span>{{ '%03d'|format(r.get('frame', 0)) }}</span>
+                <span>{{ '%.4f'|format(r.get('score', 0.0)) }}</span>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
         </div>
-      </div>
-      {% endfor %}
-    </div>
+        {% endfor %}
+      {% else %}
+        <div class="text-sm text-slate-500">No results.</div>
+      {% endif %}
 
-
-      <div class="mt-3 flex items-center justify-center gap-2">
-        {% if page and page > 0 %}
-          <a href="{{ url_for('home',
-                              index=page-1,
-                              textquery=(ui.textquery if ui else ''),
-                              search_type=(ui.search_type if ui else 'hybrid'),
-                              topk=(ui.topk if ui else 100),
-                              wvis=(ui.wvis if ui else 0.6),
-                              wtxt=(ui.wtxt if ui else 0.4),
-                              constraints=(ui.constraints if ui else '')) }}"
-            class="border rounded px-3 py-1 hover:bg-slate-100">Prev</a>
-        {% endif %}
-        <span class="text-sm text-slate-600">Page {{ (page or 0) + 1 }}</span>
-        {% if has_more %}
-          <a href="{{ url_for('home',
-                              index=(page or 0)+1,
-                              textquery=(ui.textquery if ui else ''),
-                              search_type=(ui.search_type if ui else 'hybrid'),
-                              topk=(ui.topk if ui else 100),
-                              wvis=(ui.wvis if ui else 0.6),
-                              wtxt=(ui.wtxt if ui else 0.4),
-                              constraints=(ui.constraints if ui else '')) }}"
-            class="border rounded px-3 py-1 hover:bg-slate-100">Next</a>
-        {% endif %}
-      </div>
+      {# (tuỳ chọn) phân trang nếu bạn muốn thêm lại ở đây #}
     </section>
 
-    <!-- Preview -->
-    <!-- Cột phải: Preview (có ảnh, chỗ trống cho video, và nút Find similar) -->
-<aside class="lg:col-span-3 bg-white border rounded p-3 box">
-  <!-- khung media -->
-  <div class="w-full aspect-video bg-slate-100 rounded flex items-center justify-center overflow-hidden">
-    <!-- ẢNH PREVIEW (hiển thị ngay) -->
-    <img id="pvImg" src="" alt="preview" class="max-w-full max-h-full hidden">  <!-- bắt đầu ẩn, hiện khi chọn -->
-    <!-- VIDEO PREVIEW (để dành tương lai) -->
-    <video id="pvVid" controls class="w-full h-full hidden"></video>            <!-- sau này set src để phát -->
-    <!-- placeholder khi chưa chọn -->
-    <span id="pvPh" class="text-slate-400 text-sm">Click một ảnh để xem chi tiết…</span>
-  </div>
+    <!-- ===== RIGHT: PREVIEW (sticky, rộng vừa) ===== -->
+    <aside class="shrink-0 w-[24vw] min-w-[300px]
+                  lg:sticky lg:top-20 self-start
+                  max-h-[calc(100vh-6rem)] overflow-auto
+                  bg-white border rounded p-3 box">
+      <!-- khung media -->
+      <div class="w-full aspect-video bg-slate-100 rounded flex items-center justify-center overflow-hidden">
+        <img id="pvImg" src="" alt="preview" class="max-w-full max-h-full hidden">
+        <video id="pvVid" controls class="w-full h-full hidden"></video>
+        <span id="pvPh" class="text-slate-400 text-sm">Click một ảnh để xem chi tiết…</span>
+      </div>
 
-  <!-- thông tin + hành động -->
-  <div class="mt-3 text-sm">
-    <div class="font-semibold mb-2">Details</div>
-    <div class="grid grid-cols-3 gap-2 text-xs">
-      <div class="bg-slate-50 rounded p-2">ID<br><b id="pvId">—</b></div>
-      <div class="bg-slate-50 rounded p-2">Score<br><b id="pvScore">—</b></div>
-      <div class="bg-slate-50 rounded p-2">Timecode<br><b id="pvTime">—</b></div> <!-- để dành nếu có -->
+      <!-- details + actions -->
+      <div class="mt-3 text-sm">
+        <div class="font-semibold mb-2">Details</div>
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <div class="bg-slate-50 rounded p-2">ID<br><b id="pvId">—</b></div>
+          <div class="bg-slate-50 rounded p-2">Score<br><b id="pvScore">—</b></div>
+          <div class="bg-slate-50 rounded p-2">Timecode<br><b id="pvTime">—</b></div>
+        </div>
+
+        <div class="mt-3 flex gap-2">
+          <a id="btnSimilar"
+            href="#"
+            class="px-3 py-2 rounded bg-blue-600 text-white text-xs hover:bg-blue-700 disabled:opacity-50"
+            aria-disabled="true">Find similar</a>
+          <button id="btnToggle"
+                  type="button"
+                  class="px-3 py-2 rounded border text-xs hover:bg-slate-50"
+                  disabled>Show video</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+  <!-- Footer -->
+  <footer class="bg-slate-100 border-t">
+    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+      <div class="text-sm text-slate-500">
+        &copy; 2025 UTEvui. All rights reserved.
+      </div>
     </div>
+  </footer>
 
-    <!-- nút hành động -->
-    <div class="mt-3 flex gap-2">
-      <!-- Find similar: dẫn tới /imgsearch?imgid=<id> kèm tham số UI -->
-      <a id="btnSimilar"
-         href="#"
-         class="px-3 py-2 rounded bg-blue-600 text-white text-xs hover:bg-blue-700 disabled:opacity-50"
-         aria-disabled="true">Find similar</a>
-
-      <!-- nút chuyển Media (ảnh <-> video) để sau này dùng -->
-      <button id="btnToggle"
-              type="button"
-              class="px-3 py-2 rounded border text-xs hover:bg-slate-50"
-              disabled>Show video</button>
-    </div>
-  </div>
-</aside>
-
-
+  <!-- JS: đồng bộ form + ví dụ + onPick -->
   <script defer>
     const form = document.querySelector('form[action*="textsearch"]');
+
     const sync = () => {
       if (!form) return;
       const st = document.querySelector('input[name="stype"]:checked');
-      form.querySelector('input[name="search_type"]').value = st ? st.value : 'hybrid';
-      form.querySelector('input[name="topk"]').value        = document.getElementById('topk').value;
-      form.querySelector('input[name="wvis"]').value        = document.getElementById('wvis').value || 0.6;
-      form.querySelector('input[name="wtxt"]').value        = document.getElementById('wtxt').value || 0.4;
-      form.querySelector('input[name="constraints"]').value = document.getElementById('constraints').value || '';
+      // search_type: mặc định 'visual' nếu chưa chọn
+      form.querySelector('input[name="search_type"]').value = st ? st.value : 'visual';
+      // topk từ slider
+      form.querySelector('input[name="topk"]').value = document.getElementById('topk').value;
+      // luôn về trang 1 khi thay filter
       form.querySelector('input[name="index"]').value = 0;
     };
+
+    // Đồng bộ khi đổi radio
     document.querySelectorAll('input[name="stype"]').forEach(r => r.addEventListener('change', sync));
-    ['topk','wvis','wtxt','constraints'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener('input', () => {
-        if (id === 'topk') document.getElementById('topkLabel').textContent = el.value;
+
+    // Đồng bộ khi đổi slider topk
+    const topkEl = document.getElementById('topk');
+    if (topkEl) {
+      topkEl.addEventListener('input', () => {
+        document.getElementById('topkLabel').textContent = topkEl.value;
         sync();
       });
-    });
+    }
+
+    // Gán chips ví dụ
     document.querySelectorAll('.ex').forEach(b => b.addEventListener('click', () => {
       const q = document.querySelector('input[name="textquery"]');
       if (!q) return;
       q.value = b.textContent.trim();
       q.focus();
     }));
-    document.addEventListener('DOMContentLoaded', sync);
-  </script>
-  <script defer>
-    const form = document.querySelector('form[action*="textsearch"]');
-    const sync = () => {
-      if (!form) return;
-      const st = document.querySelector('input[name="stype"]:checked');
-      form.querySelector('input[name="search_type"]').value = st ? st.value : 'hybrid';
-      form.querySelector('input[name="topk"]').value        = document.getElementById('topk').value;
-      form.querySelector('input[name="wvis"]').value        = document.getElementById('wvis').value || 0.6;
-      form.querySelector('input[name="wtxt"]').value        = document.getElementById('wtxt').value || 0.4;
-      form.querySelector('input[name="constraints"]').value = document.getElementById('constraints').value || '';
-      form.querySelector('input[name="index"]').value = 0;
-    };
-    document.querySelectorAll('input[name="stype"]').forEach(r => r.addEventListener('change', sync));
-    ['topk','wvis','wtxt','constraints'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener('input', () => {
-        if (id === 'topk') document.getElementById('topkLabel').textContent = el.value;
-        sync();
-      });
-    });
-    document.querySelectorAll('.ex').forEach(b => b.addEventListener('click', () => {
-      const q = document.querySelector('input[name="textquery"]');
-      if (!q) return; q.value = b.textContent.trim(); q.focus();
-    }));
+
     document.addEventListener('DOMContentLoaded', sync);
   </script>
 
-  <!-- ✅ nạp visual.js *trước khi đóng body* để có hàm onPick -->
+
+
+  <!-- nạp visual.js để có onPick() -->
   <script src="{{ url_for('static', filename='js/visual.js') }}" defer></script>
 </body>
 </html>
