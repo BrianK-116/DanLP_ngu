@@ -4,6 +4,8 @@
 ```
 pip install git+https://github.com/openai/CLIP.git
 pip install -r requirements.txt
+conda env create -f environment.yml
+conda activate faiss310
 ```
 
 ## Run 
