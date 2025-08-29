@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
+
 <body class="bg-slate-50 text-slate-800">
   <!-- Header -->
   <header class="bg-white border-b px-6 py-3">
@@ -34,9 +35,12 @@
     <div class="flex flex-col md:flex-row md:items-center gap-3">
       <!-- Tabs -->
       <div class="bg-white border rounded p-1 box flex gap-1">
-        <span class="px-3 py-1 rounded border bg-blue-50 text-blue-700 text-sm">KIS</span>
-        <span class="px-3 py-1 rounded hover:bg-slate-100 text-sm">AVS</span>
-        <span class="px-3 py-1 rounded hover:bg-slate-100 text-sm">Q&A</span>
+        <!-- KIS: chuyển sang trang /kis -->
+        <a href="/kis" class="px-3 py-1 rounded border bg-blue-50 text-blue-700 text-sm">KIS</a>
+        <!-- Trake (đổi tên từ AVS theo yêu cầu): /trake -->
+        <a href="/trake" class="px-3 py-1 rounded hover:bg-slate-100 text-sm">Trake</a>
+        <!-- Q&A: /qa -->
+        <a href="/qa" class="px-3 py-1 rounded hover:bg-slate-100 text-sm">Q&A</a>
       </div>
 
       <!-- Dataset -->
@@ -306,5 +310,212 @@
 
   <!-- nạp visual.js để có onPick() -->
   <script src="{{ url_for('static', filename='js/visual.js') }}" defer></script>
+<!-- ====================== SUBMISSION MODES (KIS / Q&A / TRAKE) ====================== -->
+<script>
+  /* =========================================================================
+   * (0) HẠ TẦNG: đọc/ghi 'page_mode' (kis|qa|trake) + highlight tab
+   *  - Lưu vào URL (?page_mode=...) và localStorage để nhớ lần sau.
+   *  - Không điều hướng sang trang khác; chỉ đổi mode ngay trên home.
+   * ========================================================================= */
+
+  // Lấy mode từ URL hoặc localStorage (ưu tiên URL)
+  function getPageMode() {
+    const urlMode = new URL(location.href).searchParams.get('page_mode');
+    return (urlMode || localStorage.getItem('page_mode') || '').toLowerCase();
+  }
+
+  // Set mode → cập nhật URL (không reload), localStorage và style tab
+  function setPageMode(mode) {
+    // Chuẩn hoá giá trị
+    const m = (mode || '').toLowerCase();
+    if (!['kis', 'qa', 'trake'].includes(m)) return;
+
+    // Cập nhật URL nhưng không reload trang
+    const u = new URL(location.href);
+    u.searchParams.set('page_mode', m);
+    history.replaceState({}, '', u);
+
+    // Lưu lại để nhớ
+    localStorage.setItem('page_mode', m);
+
+    // Tô đậm tab đang chọn
+    highlightActiveTab(m);
+
+    // Reset đồng hồ Added hiển thị đúng theo draft của mode
+    if (m === 'kis')    kis_syncCount();
+    if (m === 'qa')     qa_syncCount();
+    if (m === 'trake')  tk_syncCount();
+
+    // Gợi ý nhỏ cạnh nút Submit
+    const hint = document.getElementById('csvFilenameHint');
+    if (hint) hint.textContent = m ? `(${m.toUpperCase()} mode)` : '';
+  }
+
+  // Thêm class để highlight tab tương ứng
+  function highlightActiveTab(mode) {
+    const tabs = {
+      kis:   document.querySelector('a[href="/kis"], a[data-tab="kis"]'),
+      qa:    document.querySelector('a[href="/qa"], a[data-tab="qa"]'),
+      trake: document.querySelector('a[href="/trake"], a[data-tab="trake"]')
+    };
+    // Bỏ highlight cũ
+    Object.values(tabs).forEach(a => a && a.classList.remove('border','bg-blue-50','text-blue-700'));
+    // Thêm highlight mới
+    if (tabs[mode]) tabs[mode].classList.add('border','bg-blue-50','text-blue-700');
+  }
+
+  // Gắn click cho 3 tab: chặn điều hướng, chỉ đổi mode
+  function wireTabs() {
+    const bind = (selector, mode) => {
+      const el = document.querySelector(selector);
+      if (!el) return;
+      el.addEventListener('click', (e) => {
+        e.preventDefault();          // chặn điều hướng /kis, /qa, /trake
+        setPageMode(mode);           // chỉ đổi mode
+      });
+      // Thêm data-tab để highlight nếu href thay đổi sau này
+      el.setAttribute('data-tab', mode);
+      // Đổi con trỏ để rõ là nút chọn
+      el.classList.add('cursor-pointer');
+    };
+    bind('a[href="/kis"]',   'kis');
+    bind('a[href="/qa"]',    'qa');
+    bind('a[href="/trake"]', 'trake');
+  }
+
+  /* =========================================================================
+   * (1) KIS — mảng draft: [{video, frame}] → CSV "<video>, <frame>"
+   * ========================================================================= */
+  function kis_get()  { try { return JSON.parse(localStorage.getItem('kisDraft') || '[]'); } catch { return []; } }
+  function kis_set(a) { localStorage.setItem('kisDraft', JSON.stringify(a.slice(0,100))); kis_syncCount(); }
+  function kis_syncCount(){
+    const c = document.getElementById('addedCount');
+    if (c) c.textContent = String(Math.min(kis_get().length, 100));
+  }
+  function kis_add(video, frameIdx){
+    const data = kis_get();
+    data.push({ video:String(video).trim(), frame: parseInt(frameIdx,10) || 0 });
+    kis_set(data);
+  }
+  function kis_export(){
+    const rows = kis_get().map(it => `${it.video}, ${it.frame}`);
+    if (!rows.length) return alert('Danh sách trống. Hãy Add ít nhất 1 dòng.');
+    const blob = new Blob([rows.join('\n')], { type:'text/csv;charset=utf-8;' });
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: 'kis_submission.csv'
+    }); a.click();
+  }
+
+  /* =========================================================================
+   * (2) Q&A — mảng draft: [{video, frame, answer}] → CSV '<video>, <frame>, "answer">'
+   * ========================================================================= */
+  function qa_get()  { try { return JSON.parse(localStorage.getItem('qaDraft') || '[]'); } catch { return []; } }
+  function qa_set(a) { localStorage.setItem('qaDraft', JSON.stringify(a.slice(0,100))); qa_syncCount(); }
+  function qa_syncCount(){
+    const c = document.getElementById('addedCount');
+    if (c) c.textContent = String(Math.min(qa_get().length, 100));
+  }
+  function qa_add(video, frameIdx, answer){
+    const ans = String(answer ?? '').trim().slice(0, 100); // BTC: ≤100 ký tự
+    const data = qa_get();
+    data.push({ video:String(video).trim(), frame: parseInt(frameIdx,10)||0, answer: ans });
+    qa_set(data);
+  }
+  function qa_export(){
+    const rows = qa_get().map(it => `${it.video}, ${it.frame}, "${it.answer}"`);
+    if (!rows.length) return alert('Danh sách trống. Hãy Add ít nhất 1 dòng.');
+    const blob = new Blob([rows.join('\n')], { type:'text/csv;charset=utf-8;' });
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: 'qa_submission.csv'
+    }); a.click();
+  }
+
+  /* =========================================================================
+   * (3) TRAKE — state: { video, frames:Array(N), N } → CSV '<video>, f1, ..., fN'
+   * ========================================================================= */
+  function tk_get() { try { return JSON.parse(localStorage.getItem('trakeDraft') || 'null'); } catch { return null; } }
+  function tk_set(s){ localStorage.setItem('trakeDraft', JSON.stringify(s)); tk_syncCount(); }
+  function tk_syncCount(){
+    const s = tk_get(); const c = document.getElementById('addedCount');
+    if (!c) return;
+    if (!s || !Array.isArray(s.frames)) { c.textContent = '0'; return; }
+    c.textContent = String(s.frames.filter(x => x!=null).length);
+  }
+  function tk_init(N){
+    const n = Math.max(1, parseInt(N,10) || 1);
+    tk_set({ video:'', frames:Array(n).fill(null), N:n });
+  }
+  function tk_setVideo(v){ const s = tk_get() || {video:'',frames:[],N:0}; s.video = String(v||'').trim(); tk_set(s); }
+  function tk_setAt(i1, frameIdx){
+    const s = tk_get(); if (!s) return alert('Chưa đặt số hành động (N).');
+    const i = parseInt(i1,10);
+    if (!(i>=1 && i<=s.N)) return alert(`Chỉ số i phải trong [1..${s.N}].`);
+    s.frames[i-1] = parseInt(frameIdx,10) || 0; tk_set(s);
+  }
+  function tk_export(){
+    const s = tk_get(); if (!s) return alert('Chưa có draft.');
+    if (!s.video) return alert('Chưa đặt tên video.');
+    if (s.frames.some(x => x==null)) return alert('Chưa đủ N frame cho tất cả hành động.');
+    const blob = new Blob([[s.video, ...s.frames].join(', ')], { type:'text/csv;charset=utf-8;' });
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: 'trake_submission.csv'
+    }); a.click();
+  }
+
+  /* =========================================================================
+   * (4) GẮN NÚT Add/Submit SẴN CÓ THEO MODE
+   *  - YÊU CẦU: visual.js đã đặt window.currentVcode & window.currentFrameIdx
+   *    khi click keyframe hoặc pause video.
+   * ========================================================================= */
+  document.addEventListener('DOMContentLoaded', () => {
+    // 4.1 Gắn tab chọn mode
+    wireTabs();
+
+    // 4.2 Thiết lập mode ban đầu
+    const startMode = getPageMode() || 'kis'; // mặc định vào KIS nếu chưa chọn
+    setPageMode(startMode);
+
+    // 4.3 Kích hoạt nút Add
+    const btnAdd = document.getElementById('btnAddFromPreview');
+    if (btnAdd) {
+      btnAdd.disabled = false;
+      btnAdd.addEventListener('click', () => {
+        const mode = getPageMode();
+        const v = window.currentVcode;
+        const f = window.currentFrameIdx;
+        if (!v || typeof f === 'undefined') {
+          alert('Hãy chọn 1 frame (hoặc pause video) trước khi Add.');
+          return;
+        }
+        if (mode === 'kis')   return kis_add(v, f);
+        if (mode === 'qa')   { const a = prompt('Nhập Answer (VN/EN, ≤100 ký tự):',''); if (a!==null) qa_add(v, f, a); return; }
+        if (mode === 'trake'){
+          // nếu chưa có state thì hỏi N lần đầu
+          if (!tk_get()) { const N = prompt('Nhập số hành động (N):','4'); tk_init(N||4); }
+          tk_setVideo(v);
+          const s = tk_get();
+          const i = prompt(`Gán vào hành động thứ mấy? (1..${s.N})`,'1');
+          if (i) tk_setAt(i, f);
+          return;
+        }
+        alert('Hãy chọn 1 mode: KIS / Q&A / Trake.');
+      });
+    }
+
+    // 4.4 Kích hoạt nút Submit
+    const btnSubmit = document.getElementById('btnSubmitCSV');
+    if (btnSubmit) {
+      btnSubmit.addEventListener('click', () => {
+        const mode = getPageMode();
+        if (mode === 'kis')   return kis_export();
+        if (mode === 'qa')    return qa_export();
+        if (mode === 'trake') return tk_export();
+        alert('Hãy chọn 1 mode: KIS / Q&A / Trake.');
+      });
+    }
+  });
+</script>
+<!-- ==================== /SUBMISSION MODES (KIS / Q&A / TRAKE) ==================== -->
+
 </body>
 </html>

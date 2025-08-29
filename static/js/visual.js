@@ -1,12 +1,15 @@
-/* =========================
- * visual.js — preview & actions (phiên bản dùng n từ tên file)
- * - Click keyframe => cập nhật panel phải (thumbnail + info)
- * - Find similar  => điều hướng /imgsearch?imgid=... (giữ tham số UI hiện tại)
- * - Show video    => mở tab mới /watch?vcode=<Lxx_Vyyy>&frame=<n>
- *   (backend sẽ dùng load_pts_map để tua đúng pts_time)
- * ========================= */
+/* ======================================================================
+ * visual.js — BẢN SẠCH HỢP NHẤT (KIS / Q&A / TRAKE nhiều dòng)
+ *  - Giữ nguyên UI hiện tại (home.html)
+ *  - Không phụ thuộc các bản patch cũ (đã gỡ lặp code)
+ *  - Có comment theo từng khối
+ * ====================================================================== */
 
-/** Form tìm kiếm để tái dùng tham số UI hiện có */
+/* =========================================================================
+ * (A) TIỆN ÍCH CHUNG
+ * ========================================================================= */
+
+/** Form tìm kiếm để build URL Find Similar giữ tham số hiện tại */
 const searchForm = document.querySelector('form[action*="textsearch"]');
 
 /** Lấy giá trị input theo name trong form (dùng build URL) */
@@ -26,14 +29,29 @@ function extractVcode(path) {
  */
 function extractN(path) {
   const fname = (String(path).split('/').pop() || '').toLowerCase();
-  const m = fname.match(/(\d+)/);     // bắt dãy số cuối tên file
-  return m ? parseInt(m[1], 10) : 0;  // fallback 0 nếu không bắt được
+  const m = fname.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
 }
 
-/** Handler khi chọn 1 thẻ keyframe trong kết quả */
+/** Biến global lưu lựa chọn hiện hành (phục vụ nút Add) */
+window.Sel = window.Sel || { vcode: null, frame_idx: null };
+
+/** Đồng hồ Added dùng chung (tuỳ theo mode) */
+function setAddedCounter(n) {
+  const el1 = document.getElementById('addedCount');
+  const el2 = document.getElementById('addedCountPlayer');
+  if (el1) el1.textContent = String(n);
+  if (el2) el2.textContent = String(n);
+}
+
+/* =========================================================================
+ * (B) PREVIEW & NÚT SHOW VIDEO
+ * ========================================================================= */
+
+/** Khi click 1 card keyframe -> cập nhật preview + ghi lựa chọn cho Add */
 window.onPick = function (card) {
   // --- lấy data từ item ---
-  const id    = card.getAttribute('data-id');     // id nội bộ (chỉ để hiển thị)
+  const id    = card.getAttribute('data-id');     // id nội bộ (chỉ hiển thị)
   const path  = card.getAttribute('data-path');   // đường dẫn ảnh
   const score = card.getAttribute('data-score');  // điểm xếp hạng
 
@@ -61,25 +79,37 @@ window.onPick = function (card) {
 
   // --- build URL Find similar (giữ tham số UI) ---
   const params = new URLSearchParams({
-    imgid: id,                                        // server của bạn đang dùng id nội bộ cho /imgsearch
+    imgid: id,
     index: 0,
     textquery: getVal('textquery'),
-    search_type: getVal('search_type') || 'visual',   // chỉ visual/ocr
+    search_type: getVal('search_type') || 'visual',
     topk: getVal('topk') || '100'
   });
   sim.href = '/imgsearch?' + params.toString();
   sim.removeAttribute('aria-disabled');
 
-  // --- chuẩn bị thông tin để mở video ở tab mới ---
-  const vcode = extractVcode(path);   // "L21_V001"
-  const n     = extractN(path);       // số nguyên từ tên file, ví dụ 20
+  // --- chuẩn bị Show Video & ghi lựa chọn Add ---
+  const vcode = extractVcode(path);
+  const n     = extractN(path);
   tgBtn.dataset.vcode = vcode;
-  tgBtn.dataset.frame = String(n);    // 'frame' ở URL chính là n
+  tgBtn.dataset.frame = String(n);
+
+  // Ghi lựa chọn toàn cục cho 3 mode
+  window.Sel.vcode = vcode;
+  window.Sel.frame_idx = n;
+  window.currentVcode = vcode;       // dự phòng cho code cũ (nếu có)
+  window.currentFrameIdx = n;
+
+  // Bật nút Add (đổi style cho rõ)
+  const btnAdd = document.getElementById('btnAddFromPreview');
+  if (btnAdd) {
+    btnAdd.disabled = false;
+    btnAdd.classList.remove('bg-gray-400');
+    btnAdd.classList.add('bg-emerald-600','hover:bg-emerald-700','text-white');
+  }
 };
 
-/** Nút Show video -> mở tab mới tới /watch?vcode=<vcode>&frame=<n>
- *  Backend sẽ dùng load_pts_map để tra pts_time theo n và tua đúng mốc.
- */
+/** Nút Show video -> mở tab mới tới /watch?vcode=<vcode>&frame=<n> */
 document.getElementById('btnToggle')?.addEventListener('click', function () {
   const vcode = this.dataset.vcode;
   const n     = this.dataset.frame || '';
@@ -93,457 +123,663 @@ document.getElementById('btnToggle')?.addEventListener('click', function () {
     url.toString(),
     '_blank',
     'noopener,noreferrer,width=1280,height=720,resizable,scrollbars'
-  );   
+  );
 });
 
+/* =========================================================================
+ * (C) MODE CHỌN HÌNH THỨC NỘP: KIS | Q&A | TRAKE
+ *  - Chặn điều hướng 3 tab, chỉ đổi 'mode' + highlight
+ *  - Gắn hành vi cho Add/Submit theo mode
+ * ========================================================================= */
 
-const SUBM_KIND_KEY = 'subm_kind';      // loại nộp (mặc định 'kis')
-const SUBM_ROWS_KEY = 'subm_rows';      // danh sách dòng đã add
-const SUBM_FNAME_KEY = 'subm_fname';    // tên file CSV mong muốn
-const SUBM_MAX_LINES = 100;             // tối đa 100 dòng
-
-// ---------- Tiện ích localStorage ----------
-function getRows(){ try { return JSON.parse(localStorage.getItem(SUBM_ROWS_KEY) || '[]'); } catch { return []; } }
-function setRows(arr){ localStorage.setItem(SUBM_ROWS_KEY, JSON.stringify(arr || [])); }
-function getFname(){ return localStorage.getItem(SUBM_FNAME_KEY) || ''; }
-function setFname(n){ localStorage.setItem(SUBM_FNAME_KEY, String(n||'').trim()); }
-function updateCounters(){
-  const n = Math.min(getRows().length, SUBM_MAX_LINES);
-  const el1 = document.getElementById('addedCount');
-  const el2 = document.getElementById('addedCountPlayer');
-  if (el1) el1.textContent = n;
-  if (el2) el2.textContent = n;
+const __MODE_KEY = 'submit_mode';
+function getMode() {
+  const m = (localStorage.getItem(__MODE_KEY) || '').toLowerCase();
+  return ['kis','qa','trake'].includes(m) ? m : 'kis';
+}
+function setMode(m) {
+  const mode = (m||'').toLowerCase();
+  if (!['kis','qa','trake'].includes(mode)) return;
+  localStorage.setItem(__MODE_KEY, mode);
+  highlightModeTab(mode);
+  // Gợi ý nhỏ cạnh Submit
+  const hint = document.getElementById('csvFilenameHint');
+  if (hint) hint.textContent = `(${mode.toUpperCase()} mode)`;
+  // Rebind hành vi nút theo mode
+  rebindActionsForMode();
+}
+function highlightModeTab(mode) {
+  const tabs = {
+    kis:   document.querySelector('a[href="/kis"]'),
+    qa:    document.querySelector('a[href="/qa"]'),
+    trake: document.querySelector('a[href="/trake"]'),
+  };
+  Object.values(tabs).forEach(a => a && a.classList.remove('border','bg-blue-50','text-blue-700'));
+  if (tabs[mode]) tabs[mode].classList.add('border','bg-blue-50','text-blue-700');
+}
+function wireModeTabs() {
+  const bind = (sel, mode) => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      setMode(mode);
+    });
+    el.classList.add('cursor-pointer');
+  };
+  bind('a[href="/kis"]',   'kis');
+  bind('a[href="/qa"]',    'qa');
+  bind('a[href="/trake"]', 'trake');
 }
 
-// ---------- Lưu lựa chọn hiện tại (Preview) ----------
-/** [THÊM] Trạng thái chọn hiện hành trong Preview */
-const Sel = { vcode: null, frame_idx: null };
+/* =========================================================================
+ * (D) KIS — danh sách dòng, submit qua /export/kis
+ * ========================================================================= */
 
-/** [THÊM] Ưu tiên lấy vcode & frame từ IMG có data-* */
-function getVcodeFrameFromImgEl(imgEl){
-  // 1) Ưu tiên data-frame (n) + path để suy ra vcode
-  const df = imgEl.getAttribute('data-frame'); // kỳ vọng là 'n'
-  let n = (df!=null) ? parseInt(df, 10) : NaN;
+const KIS_ROWS_KEY   = 'kis_rows';
+const KIS_FNAME_KEY  = 'kis_fname';
+const KIS_MAX_LINES  = 100;
 
-  // 2) Lấy vcode từ data-path nếu có
-  const p = imgEl.getAttribute('data-path') || '';
-  let vcode = null;
-  if (p){
-    const parts = p.split('/').filter(Boolean);
-    // .../Keyframes_L21/L21_V001/020.jpg -> parts[-2] = L21_V001
-    vcode = parts[parts.length - 2] || null;
-    // Nếu chưa có n (data-frame thiếu), suy từ tên file ảnh
-    if (Number.isNaN(n)){
-      const fname = parts[parts.length - 1] || '';
-      const num = parseInt(fname, 10);
-      if (!Number.isNaN(num)) n = num;
-    }
-  }
-  if (vcode && Number.isInteger(n) && n >= 0) return { vcode, frame_idx: n };
-  return null;
-}
+function kis_rows_get() { try { return JSON.parse(localStorage.getItem(KIS_ROWS_KEY)||'[]'); } catch { return []; } }
+function kis_rows_set(a) { localStorage.setItem(KIS_ROWS_KEY, JSON.stringify((a||[]).slice(0,KIS_MAX_LINES))); syncAddedCounter(); }
+function kis_fname_get() { return localStorage.getItem(KIS_FNAME_KEY) || 'submit_kis.csv'; }
+function kis_fname_set(n){ localStorage.setItem(KIS_FNAME_KEY, String(n||'').trim()); }
 
-/** [THÊM] Thêm một hàng KIS */
-function addKISRow(vcode, frameIdx){
-  const rows = getRows();
-  if (rows.length >= SUBM_MAX_LINES) return false;
-  rows.push({ vcode, frame_idx: Number(frameIdx) });
-  setRows(rows);
-  updateCounters();
+function kis_addLine(vcode, frameIdx) {
+  const rows = kis_rows_get();
+  if (rows.length >= KIS_MAX_LINES) return false;
+  rows.push({ vcode:String(vcode).trim(), frame_idx: parseInt(frameIdx,10)||0 });
+  kis_rows_set(rows);
   return true;
 }
 
-/** [THÊM] Tải file CSV từ server (/export/kis), server sẽ pad đủ 100 */
-async function downloadKISCsv(filename){
-  const rows = getRows();
-  const fn = filename || getFname() || 'submit_kis.csv';
+/** Thu thập keyframes đang hiển thị (dùng bổ sung cho đủ 100 nếu cần) */
+function collectGridFrames() {
+  const cards = document.querySelectorAll('.card[data-path][data-frame]');
+  const out = [];
+  cards.forEach(card => {
+    const path  = card.getAttribute('data-path')  || '';
+    const frame = card.getAttribute('data-frame');
+    const parts = path.split('/').filter(Boolean);
+    const vcode = parts.length >= 2 ? parts[parts.length - 2] : null;
+    const n = frame != null ? parseInt(frame, 10) : NaN;
+    if (vcode && Number.isInteger(n) && n >= 0) {
+      out.push({ vcode, frame_idx: n });
+    }
+  });
+  return out;
+}
+
+/** Xây 100 dòng: ưu tiên các dòng user đã Add, sau đó bổ sung từ grid */
+function kis_build_100_rows() {
+  const MAX = 100;
+  const added = kis_rows_get();
+  const grid  = collectGridFrames();
+  const seen = new Set();
+  const key = (r) => `${r.vcode}#${r.frame_idx}`;
+  const finalRows = [];
+
+  for (const r of added) {
+    const k = key(r); if (!seen.has(k)) { finalRows.push(r); seen.add(k); if (finalRows.length>=MAX) return finalRows; }
+  }
+  for (const r of grid) {
+    const k = key(r); if (!seen.has(k)) { finalRows.push(r); seen.add(k); if (finalRows.length>=MAX) return finalRows; }
+  }
+  if (finalRows.length > 0) while (finalRows.length < MAX) finalRows.push(finalRows[finalRows.length-1]);
+  return finalRows;
+}
+
+/** Submit KIS: POST lên /export/kis -> tải file CSV */
+async function kis_submit() {
+  const rows100 = kis_build_100_rows();
+  const filename = kis_fname_get();
+
   const res = await fetch('/export/kis', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rows, filename: fn })
+    body: JSON.stringify({ rows: rows100, filename })
   });
-  if (!res.ok){
+  if (!res.ok) {
     const t = await res.text();
     alert('Export failed: ' + t);
     return;
   }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = fn;
+  const a = Object.assign(document.createElement('a'), { href:url, download: filename });
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
+
+  // Dọn nháp KIS sau khi nộp (tuỳ bạn, có thể giữ lại)
+  localStorage.setItem(KIS_ROWS_KEY, '[]');
+  syncAddedCounter();
 }
 
-/* =========================
- * GẮN SỰ KIỆN Ở TRANG HOME
- * ========================= */
-(function initHomeButtonsV2(){
-  // Khi click một IMG kết quả -> cập nhật lựa chọn hiện hành & bật nút Add
-  document.addEventListener('click', (ev) => {
-    const el = ev.target;
-    if (!el || el.tagName !== 'IMG') return;
-    if (!el.hasAttribute('data-path')) return; // chỉ xử lý IMG kết quả
+/* =========================================================================
+ * (E) Q&A — nhiều dòng: [{video, frame, answer}] -> CSV client
+ * ========================================================================= */
 
-    const parsed = getVcodeFrameFromImgEl(el);
-    const btnAdd = document.getElementById('btnAddFromPreview');
-    if (parsed){
-      Sel.vcode = parsed.vcode;
-      Sel.frame_idx = parsed.frame_idx;
-      if (btnAdd) btnAdd.disabled = false; // bật nút Add khi đã có lựa chọn hợp lệ
-    }
+const QA_ROWS_KEY  = 'qa_rows';
+const QA_MAX_LINES = 100;
+
+function qa_rows_get(){ try { return JSON.parse(localStorage.getItem(QA_ROWS_KEY)||'[]'); } catch { return []; } }
+function qa_rows_set(a){ localStorage.setItem(QA_ROWS_KEY, JSON.stringify((a||[]).slice(0, QA_MAX_LINES))); syncAddedCounter(); }
+
+function qa_addLine(vcode, frameIdx, answer) {
+  const rows = qa_rows_get();
+  if (rows.length >= QA_MAX_LINES) return false;
+  const ans = String(answer ?? '').trim().slice(0, 100); // BTC: ≤100
+  rows.push({ video:String(vcode).trim(), frame: parseInt(frameIdx,10)||0, answer: ans });
+  qa_rows_set(rows);
+  return true;
+}
+
+function qa_submit() {
+  const rows = qa_rows_get();
+  if (!rows.length) return alert('Danh sách trống. Hãy Add ít nhất 1 dòng.');
+  const lines = rows.map(it => `${it.video}, ${it.frame}, "${it.answer}"`).join('\n');
+  const blob = new Blob([lines], { type:'text/csv;charset=utf-8;' });
+  const a = Object.assign(document.createElement('a'), { href:URL.createObjectURL(blob), download:'qa_submission.csv' });
+  a.click();
+}
+
+/* =========================================================================
+ * (F) TRAKE — draft 1 dòng + danh sách nhiều dòng (rows)
+ *  - draft: { video, frames:Array(N), N }
+ *  - rows:  [{ video, frames:Array(N), N }, ...]
+ * ========================================================================= */
+
+const TK_DRAFT_KEY = 'trakeDraft';
+const TK_ROWS_KEY  = 'trakeRows';
+const TK_MAX_LINES = 100;
+
+/** Draft hiện tại */
+function tk_draft_get(){ try { return JSON.parse(localStorage.getItem(TK_DRAFT_KEY) || 'null'); } catch { return null; } }
+function tk_draft_set(s){
+  localStorage.setItem(TK_DRAFT_KEY, JSON.stringify(s));
+  // Đồng hồ Trake hiển thị số DÒNG, không phải số frame -> syncAddedCounter()
+  syncAddedCounter();
+}
+
+/** Khởi tạo N hành động */
+function tk_init(N){
+  const n = Math.max(1, parseInt(N,10) || 1);
+  tk_draft_set({ video:'', frames:Array(n).fill(null), N:n });
+}
+/** Gán video hiện hành */
+function tk_setVideo(v){
+  const s = tk_draft_get() || { video:'', frames:[], N:0 };
+  s.video = String(v||'').trim();
+  tk_draft_set(s);
+}
+/** Đặt frame cho hành động i (1..N) */
+function tk_setAt(i1, frameIdx){
+  const s = tk_draft_get();
+  if (!s) return alert('Chưa đặt số hành động (N).');
+  const i = parseInt(i1,10);
+  if (!(i>=1 && i<=s.N)) return alert(`Chỉ số i phải trong [1..${s.N}].`);
+  s.frames[i-1] = parseInt(frameIdx,10)||0;
+  tk_draft_set(s);
+}
+
+/** Danh sách nhiều dòng */
+function tk_rows_get(){ try { return JSON.parse(localStorage.getItem(TK_ROWS_KEY) || '[]'); } catch { return []; } }
+function tk_rows_set(rows){
+  localStorage.setItem(TK_ROWS_KEY, JSON.stringify((rows||[]).slice(0, TK_MAX_LINES)));
+  syncAddedCounter();
+}
+
+/** Thêm 1 dòng từ draft vào rows (yêu cầu đủ N frame) */
+function tk_addLineFromDraft() {
+  const s = tk_draft_get();
+  if (!s) return alert('Chưa khởi tạo N. Bấm Set N trước.');
+  if (!s.video) return alert('Chưa đặt tên video. Hãy Add ít nhất 1 frame để hệ thống ghi video.');
+  if (s.frames.some(x => x == null)) return alert('Chưa đủ N frame cho tất cả hành động.');
+
+  const rows = tk_rows_get();
+  if (rows.length >= TK_MAX_LINES) return alert('Đã đủ 100 dòng.');
+  rows.push({ video:s.video, frames:s.frames.slice(), N:s.N });
+  tk_rows_set(rows);
+
+  // Reset frames để làm dòng kế tiếp (giữ nguyên video/N cho tiện)
+  tk_draft_set({ video:s.video, N:s.N, frames:Array(s.N).fill(null) });
+}
+
+/** Xuất CSV nhiều dòng: <video>, f1, f2, ..., fN */
+function tk_submit_all() {
+  const rows = tk_rows_get();
+  // Nếu draft đang đủ N mà chưa add -> hỏi chốt luôn
+  const s = tk_draft_get();
+  if (s && s.video && Array.isArray(s.frames) && !s.frames.some(x => x==null)) {
+    const addNow = confirm('Draft hiện tại đã đủ frame. Thêm vào danh sách trước khi Submit không?');
+    if (addNow) { rows.push({ video:s.video, frames:s.frames.slice(), N:s.N }); }
+  }
+  if (!rows.length) return alert('Chưa có dòng nào. Hãy bấm "Add Line" sau khi gán đủ N frame.');
+  const lines = rows.map(r => [r.video, ...r.frames].join(', ')).join('\n');
+  const blob = new Blob([lines], { type:'text/csv;charset=utf-8;' });
+  const a = Object.assign(document.createElement('a'), { href:URL.createObjectURL(blob), download:'trake_submission.csv' });
+  a.click();
+}
+
+/** Nút Set N (tạo đúng 1 lần, chỉ khi ở Trake) */
+function ensureTrakeSetNButton() {
+  if (getMode() !== 'trake') return;
+  if (document.getElementById('trakeSetN')) return;
+  const submitBtn = document.getElementById('btnSubmitCSV'); if (!submitBtn) return;
+
+  const btn = document.createElement('button');
+  btn.id = 'trakeSetN';
+  btn.textContent = 'Set N';
+  btn.className = 'px-3 py-2 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-800 text-sm';
+  submitBtn.parentNode.insertBefore(btn, submitBtn);
+
+  btn.addEventListener('click', () => {
+    let s = tk_draft_get();
+    if (!s) { tk_init(4); s = tk_draft_get(); }
+    const curN = s.N || 4;
+    const input = prompt('Nhập số hành động (N ≥ 1):', String(curN));
+    if (input === null) return;
+    const nNew = Math.max(1, parseInt(input, 10) || 1);
+    const frames = Array.isArray(s.frames) ? s.frames.slice(0, nNew) : [];
+    while (frames.length < nNew) frames.push(null);
+    tk_draft_set({ video: s.video || '', frames, N: nNew });
+
+    const hint = document.getElementById('csvFilenameHint');
+    if (hint) hint.textContent = `(TRAKE mode, N=${nNew})`;
   });
 
-  // Hành vi của nút Add trong Preview
-  const btnAdd = document.getElementById('btnAddFromPreview');
-  if (btnAdd){
+  // Hiển thị N hiện tại ở hint
+  const s0 = tk_draft_get();
+  const hint = document.getElementById('csvFilenameHint');
+  if (hint) hint.textContent = s0 && s0.N ? `(TRAKE mode, N=${s0.N})` : `(TRAKE mode)`;
+}
+
+/** Nút Add Line (tạo đúng 1 lần, chỉ khi ở Trake) */
+function ensureTrakeAddLineButton() {
+  if (getMode() !== 'trake') return;
+  if (document.getElementById('trakeAddLine')) return;
+  const submitBtn = document.getElementById('btnSubmitCSV'); if (!submitBtn) return;
+
+  const btn = document.createElement('button');
+  btn.id = 'trakeAddLine';
+  btn.textContent = 'Add Line';
+  btn.className = 'px-3 py-2 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-800 text-sm';
+  submitBtn.parentNode.insertBefore(btn, submitBtn);
+
+  btn.addEventListener('click', tk_addLineFromDraft);
+}
+
+/* =========================================================================
+ * (G) REBIND NÚT ADD / SUBMIT THEO MODE
+ *  - Clone & replace để loại bỏ mọi listener cũ.
+ * ========================================================================= */
+
+function cloneReplace(el){ if (!el) return null; const c = el.cloneNode(true); el.parentNode.replaceChild(c, el); return c; }
+
+function rebindActionsForMode() {
+  const mode = getMode();
+
+  // 1) Nút Add — mỗi mode một hành vi
+  let btnAdd = document.getElementById('btnAddFromPreview');
+  btnAdd = cloneReplace(btnAdd);
+  if (btnAdd) {
+    btnAdd.disabled = false;
     btnAdd.addEventListener('click', () => {
-      if (!Sel.vcode || !Number.isInteger(Sel.frame_idx)){
-        alert('Chưa chọn khung hình hợp lệ.');
+      const v = window.Sel?.vcode || window.currentVcode;
+      const f = window.Sel?.frame_idx ?? window.currentFrameIdx;
+      if (!v || typeof f === 'undefined') return alert('Hãy chọn 1 frame (hoặc pause video) trước khi Add.');
+
+      if (mode === 'kis') {
+        if (!kis_addLine(v, f)) alert('Đã đủ 100 dòng.');
+      }
+      else if (mode === 'qa') {
+        const a = prompt('Nhập Answer (VN/EN, ≤100 ký tự):','');
+        if (a === null) return;
+        if (!qa_addLine(v, f, a)) alert('Đã đủ 100 dòng.');
+      }
+      else if (mode === 'trake') {
+        if (!tk_draft_get()) tk_init(4);            // nếu chưa có N -> mặc định 4
+        tk_setVideo(v);                              // luôn set video theo lựa chọn
+        const s = tk_draft_get();
+        const i = prompt(`Gán vào hành động thứ mấy? (1..${s.N})`, '1');
+        if (i) tk_setAt(i, f);
+      }
+    });
+  }
+
+  // 2) Nút Submit — mỗi mode một hành vi
+  let btnSubmit = document.getElementById('btnSubmitCSV');
+  btnSubmit = cloneReplace(btnSubmit);
+  if (btnSubmit) {
+    btnSubmit.addEventListener('click', () => {
+      if (mode === 'kis')   return kis_submit();
+      if (mode === 'qa')    return qa_submit();
+      if (mode === 'trake') return tk_submit_all();
+    });
+  }
+
+  // 3) Nút Add File (đặt tên CSV KIS) — giữ nguyên cho KIS, hiển thị hint cho mode khác
+  const btnSetFn = document.getElementById('btnSetFilename');
+  const fnHint   = document.getElementById('csvFilenameHint');
+  if (btnSetFn) {
+    btnSetFn.replaceWith(btnSetFn.cloneNode(true));
+  }
+  const btnSetFn2 = document.getElementById('btnSetFilename');
+  if (btnSetFn2) {
+    btnSetFn2.addEventListener('click', () => {
+      if (getMode() !== 'kis') {
+        alert('Đổi tên file chỉ áp dụng cho KIS. (QA/Trake xuất mặc định)');
         return;
       }
-      const ok = addKISRow(Sel.vcode, Sel.frame_idx);
-      if (!ok) alert('Đã đủ 100 dòng.');
+      const cur = kis_fname_get();
+      const name = prompt('Đặt tên file CSV (KIS):', cur);
+      if (name !== null) {
+        kis_fname_set(name);
+        if (fnHint) fnHint.textContent = `(${getMode().toUpperCase()} mode) ${name}`;
+      }
     });
   }
 
-  // Nút đặt tên file (Add File)
-  const btnSetFn = document.getElementById('btnSetFilename');
-  const fnHint = document.getElementById('csvFilenameHint');
-  if (btnSetFn){
-    const show = () => { if (fnHint) fnHint.textContent = getFname(); };
-    show();
-    btnSetFn.addEventListener('click', () => {
-      const cur = getFname() || 'submit_kis.csv';
-      const name = prompt('Đặt tên file CSV:', cur);
-      if (name !== null){ setFname(name); show(); }
-    });
+  // 4) Đồng bộ counter hiển thị theo mode
+  syncAddedCounter();
+
+  // 5) Bảo đảm nút phụ cho Trake
+  ensureTrakeSetNButton();
+  ensureTrakeAddLineButton();
+}
+
+/** Đồng bộ counter theo mode:
+ *  - KIS  : số dòng đã Add trong kis_rows
+ *  - QA   : số dòng đã Add trong qa_rows
+ *  - Trake: số dòng đã chốt trong trakeRows
+ */
+function syncAddedCounter() {
+  const mode = getMode();
+  if (mode === 'kis') {
+    setAddedCounter(Math.min(kis_rows_get().length, KIS_MAX_LINES));
+  } else if (mode === 'qa') {
+    setAddedCounter(Math.min(qa_rows_get().length, QA_MAX_LINES));
+  } else if (mode === 'trake') {
+    setAddedCounter(Math.min(tk_rows_get().length, TK_MAX_LINES));
   }
+}
 
-  // Nút Submit
-  const btnSubmit = document.getElementById('btnSubmitCSV');
-  if (btnSubmit){
-    btnSubmit.addEventListener('click', () => {
-      downloadKISCsv().catch(err => alert(err));
-    });
-  }
+/* =========================================================================
+ * (H) PLAYER / TIỆN ÍCH KHÁC
+ * ========================================================================= */
 
-  updateCounters();
-})();
-
-/* =========================
- * GẮN SỰ KIỆN Ở TRANG PLAYER
- * ========================= */
-(function initPlayerButtonsV2(){
-  const btnAddP = document.getElementById('btnAddFromPlayer');
-  if (!btnAddP) return;
-
-  // Lấy vcode & frame từ URL (/watch?vcode=...&frame=...)
+/** Nút Add từ trang /watch (nếu có) -> thêm KIS */
+(function initPlayerAdd() {
+  const btn = document.getElementById('btnAddFromPlayer');
+  if (!btn) return;
   const usp = new URLSearchParams(window.location.search);
   const vcode = usp.get('vcode') || '';
   const frame = parseInt(usp.get('frame') || '', 10);
 
-  btnAddP.addEventListener('click', () => {
-    if (!vcode || Number.isNaN(frame)){
-      alert('Thiếu vcode/frame trong URL player.');
+  btn.addEventListener('click', () => {
+    if (!vcode || Number.isNaN(frame)) return alert('Thiếu vcode/frame trong URL player.');
+    if (!kis_addLine(vcode, frame)) alert('Đã đủ 100 dòng.');
+  });
+  syncAddedCounter();
+})();
+
+/** Mở trang /allframes?vcode=... trong tab mới (nếu cần) */
+function goAllFrames(vcode) {
+  const url = `/allframes?vcode=${encodeURIComponent(vcode)}`;
+  window.open(url, '_blank');
+}
+
+/* =========================================================================
+ * (I) KHỞI ĐỘNG
+ * ========================================================================= */
+
+document.addEventListener('DOMContentLoaded', () => {
+  wireModeTabs();               // bắt 3 tab để đổi mode (không điều hướng)
+  setMode(getMode() || 'kis');  // chọn mode ban đầu (mặc định KIS)
+  syncAddedCounter();           // hiển thị Added theo mode
+});
+
+/* ======================================================================
+ * [THÊM] Bảng “Nháp (Preview)” hiển thị các mục sẽ được tải về
+ *  - Tự tạo một khối UI dưới phần Actions (panel phải)
+ *  - Render khác nhau cho KIS / Q&A / TRAKE
+ *  - Có nút xoá từng dòng & xoá tất cả
+ * ====================================================================== */
+
+/** (1) Tạo khung UI 1 lần nếu chưa có */
+function ensureDraftPanelUI() {
+  // Tìm panel phải (nơi có nút Submit)
+  const submitBtn = document.getElementById('btnSubmitCSV');
+  if (!submitBtn) return;
+  const container = submitBtn.closest('aside') || submitBtn.parentElement;
+  if (!container) return;
+
+  // Nếu đã có khung thì thôi
+  if (document.getElementById('draftPanel')) return;
+
+  // Tạo khối “Nháp (Preview)”
+  const wrap = document.createElement('div');
+  wrap.id = 'draftPanel';
+  wrap.className = 'mt-4 border rounded bg-white p-3';
+  wrap.innerHTML = `
+    <div class="flex items-center justify-between mb-2">
+      <div class="text-sm font-semibold">Nháp (Preview)</div>
+      <div class="text-xs text-slate-500" id="draftPanelModeHint"></div>
+    </div>
+    <div id="draftPanelBody" class="space-y-2 text-sm"></div>
+    <div class="mt-2 flex items-center gap-2">
+      <button id="btnDraftClear" class="px-2 py-1 rounded border hover:bg-slate-50 text-xs">Xoá tất cả</button>
+    </div>
+  `;
+  // Chèn ngay phía dưới cụm nút Submit
+  container.appendChild(wrap);
+
+  // Gắn handler “Xoá tất cả”
+  const btnClear = wrap.querySelector('#btnDraftClear');
+  btnClear.addEventListener('click', () => {
+    const mode = getMode();
+    if (!confirm('Xoá toàn bộ nháp hiện tại?')) return;
+    if (mode === 'kis') {
+      localStorage.setItem('kis_rows', '[]');
+    } else if (mode === 'qa') {
+      localStorage.setItem('qa_rows', '[]');
+    } else if (mode === 'trake') {
+      localStorage.setItem('trakeRows', '[]'); // chỉ xoá danh sách dòng
+      // Tùy bạn có muốn xoá draft luôn không; mặc định giữ draft để tiếp tục làm
+      // localStorage.removeItem('trakeDraft');
+    }
+    renderDraftPanel();   // vẽ lại
+    syncAddedCounter();   // đếm lại
+  });
+
+  // Delegation: Xoá 1 dòng (nếu có nút data-del-index)
+  wrap.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-del-index]');
+    if (!btn) return;
+    const idx = parseInt(btn.getAttribute('data-del-index'), 10);
+    const mode = getMode();
+    if (Number.isNaN(idx)) return;
+
+    if (mode === 'kis') {
+      const rows = kis_rows_get();
+      rows.splice(idx, 1);
+      kis_rows_set(rows);
+    } else if (mode === 'qa') {
+      const rows = qa_rows_get();
+      rows.splice(idx, 1);
+      qa_rows_set(rows);
+    } else if (mode === 'trake') {
+      const rows = tk_rows_get();
+      rows.splice(idx, 1);
+      tk_rows_set(rows);
+    }
+    renderDraftPanel();
+    syncAddedCounter();
+  });
+}
+
+/** (2) Render bảng tuỳ theo mode */
+function renderDraftPanel() {
+  ensureDraftPanelUI();
+  const body = document.getElementById('draftPanelBody');
+  const hint = document.getElementById('draftPanelModeHint');
+  if (!body || !hint) return;
+
+  const mode = getMode();
+  hint.textContent = `Chế độ: ${mode.toUpperCase()}`;
+
+  // Xoá nội dung cũ
+  body.innerHTML = '';
+
+  if (mode === 'kis') {
+    // KIS: danh sách {vcode, frame_idx}
+    const rows = kis_rows_get();
+    if (!rows.length) {
+      body.innerHTML = `<div class="text-xs text-slate-500">Chưa có dòng nào. Hãy chọn frame rồi bấm Add.</div>`;
       return;
     }
-    const ok = addKISRow(vcode, frame);
-    if (!ok) alert('Đã đủ 100 dòng.');
-  });
+    rows.forEach((r, i) => {
+      const item = document.createElement('div');
+      item.className = 'flex items-center justify-between border rounded px-2 py-1';
+      item.innerHTML = `
+        <div class="font-mono">${r.vcode}, ${r.frame_idx}</div>
+        <button class="text-xs text-red-600 hover:underline" data-del-index="${i}">Xoá</button>
+      `;
+      body.appendChild(item);
+    });
+    // Gợi ý cách nộp
+    const tip = document.createElement('div');
+    tip.className = 'text-xs text-slate-500';
+    tip.textContent = 'Khi Submit: hệ thống sẽ tự bổ sung từ grid để đủ 100 dòng nếu thiếu.';
+    body.appendChild(tip);
 
-  updateCounters();
-})();
-/* ==========================================================
- * [THÊM] Bắt click trên .card (đúng nơi có data-id/data-path/data-frame)
- * - Lưu lựa chọn hiện hành Sel = { vcode, frame_idx }
- * - Bật nút Add và đổi màu (xanh đậm) cho rõ trạng thái
- * ========================================================== */
-(function wireSelectFromCard(){
-  // Biến trạng thái chọn hiện hành (tái sử dụng nếu đã khai báo trước)
-  window.Sel = window.Sel || { vcode: null, frame_idx: null };
-
-  document.addEventListener('click', (ev) => {
-    // Tìm phần tử .card gần nhất mà ta vừa click (thumbnail wrapper)
-    const card = ev.target?.closest?.('.card');
-    if (!card) return;
-
-    // Lấy dữ liệu từ data-* TRÊN .card (đúng theo home.html)
-    const path  = card.getAttribute('data-path')  || '';
-    const frame = card.getAttribute('data-frame');        // n
-    const parts = path.split('/').filter(Boolean);
-    const vcode = parts.length >= 2 ? parts[parts.length - 2] : null;
-    const n = frame != null ? parseInt(frame, 10) : NaN;
-
-    if (!vcode || Number.isNaN(n) || n < 0) return;
-
-    // Lưu lựa chọn hiện hành
-    Sel.vcode = vcode;
-    Sel.frame_idx = n;
-
-    // Bật nút Add & đổi màu cho rõ
-    const btnAdd = document.getElementById('btnAddFromPreview');
-    if (btnAdd){
-      btnAdd.disabled = false;
-      // nếu trước đó đang xám, chuyển sang xanh đậm
-      btnAdd.classList.remove('bg-gray-400');
-      btnAdd.classList.add('bg-emerald-600','hover:bg-emerald-700','text-white');
+  } else if (mode === 'qa') {
+    // QA: danh sách {video, frame, answer}
+    const rows = qa_rows_get();
+    if (!rows.length) {
+      body.innerHTML = `<div class="text-xs text-slate-500">Chưa có dòng nào. Bấm Add để thêm Answer cho frame đã chọn.</div>`;
+      return;
     }
-  });
-})();
-/* ==========================================================
- * [THÊM] Khởi tạo đồng hồ đếm khi trang sẵn sàng
- * ========================================================== */
+    rows.forEach((r, i) => {
+      const item = document.createElement('div');
+      item.className = 'border rounded px-2 py-1';
+      item.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div class="font-mono">${r.video}, ${r.frame}</div>
+          <button class="text-xs text-red-600 hover:underline" data-del-index="${i}">Xoá</button>
+        </div>
+        <div class="text-xs italic break-words">"${r.answer}"</div>
+      `;
+      body.appendChild(item);
+    });
+    const tip = document.createElement('div');
+    tip.className = 'text-xs text-slate-500';
+    tip.textContent = 'Submit sẽ tải file qa_submission.csv gồm tất cả dòng ở trên.';
+    body.appendChild(tip);
+
+  } else if (mode === 'trake') {
+    // TRAKE: hiển thị draft hiện tại + danh sách rows đã chốt
+    const draft = tk_draft_get();
+    // 2.1 Draft hiện tại
+    const draftBox = document.createElement('div');
+    draftBox.className = 'border rounded p-2 bg-slate-50';
+    if (!draft) {
+      draftBox.innerHTML = `<div class="text-xs text-slate-500">Chưa khởi tạo N. Hãy bấm "Set N".</div>`;
+    } else {
+      const { video, N, frames } = draft;
+      const lines = [];
+      for (let i = 0; i < N; i++) {
+        const val = (frames && frames[i] != null) ? frames[i] : '—';
+        lines.push(`<span class="px-1 py-0.5 rounded border">${i+1}:${val}</span>`);
+      }
+      draftBox.innerHTML = `
+        <div class="text-xs mb-1">Draft hiện tại:</div>
+        <div class="text-xs"><b>Video:</b> <span class="font-mono">${video || '(chưa có)'}</span> &nbsp; <b>N:</b> ${N}</div>
+        <div class="mt-1 flex flex-wrap gap-1 text-xs">${lines.join(' ')}</div>
+        <div class="mt-1 text-[11px] text-slate-500">Bấm Add để gán frame vào vị trí (sẽ hỏi “hành động thứ mấy?”).</div>
+      `;
+    }
+    body.appendChild(draftBox);
+
+    // 2.2 Danh sách dòng đã chốt
+    const rows = tk_rows_get();
+    const head = document.createElement('div');
+    head.className = 'mt-2 text-xs text-slate-500';
+    head.textContent = `Đã chốt: ${rows.length} dòng`;
+    body.appendChild(head);
+
+    if (!rows.length) {
+      const empty = document.createElement('div');
+      empty.className = 'text-xs text-slate-500';
+      empty.textContent = 'Chưa có dòng nào. Khi draft đủ N frame, bấm "Add Line" để chốt.';
+      body.appendChild(empty);
+    } else {
+      rows.forEach((r, i) => {
+        const item = document.createElement('div');
+        item.className = 'border rounded px-2 py-1';
+        const seq = r.frames.map((f, idx) => `<span class="px-1 py-0.5 rounded border">${idx+1}:${f}</span>`).join(' ');
+        item.innerHTML = `
+          <div class="flex items-center justify-between">
+            <div class="text-xs"><b class="font-mono">${r.video}</b> &nbsp; <span class="text-slate-500">N=${r.N}</span></div>
+            <button class="text-xs text-red-600 hover:underline" data-del-index="${i}">Xoá</button>
+          </div>
+          <div class="mt-1 flex flex-wrap gap-1 text-xs">${seq}</div>
+        `;
+        body.appendChild(item);
+      });
+
+      const tip = document.createElement('div');
+      tip.className = 'text-xs text-slate-500';
+      tip.textContent = 'Submit sẽ tải file trake_submission.csv gồm TẤT CẢ các dòng đã chốt.';
+      body.appendChild(tip);
+    }
+  }
+}
+
+/** (3) Kết nối vòng đời: vẽ lại khi:
+ *  - DOM sẵn sàng
+ *  - đổi mode (rebindActionsForMode đã có)
+ *  - sau khi Add / Add Line / Clear / Delete
+ */
 document.addEventListener('DOMContentLoaded', () => {
-  if (typeof updateCounters === 'function') {
-    updateCounters(); // cập nhật Added: X/100 ngay khi load
-  }
+  ensureDraftPanelUI();
+  renderDraftPanel();
 });
-/* ==========================================================
- * [THÊM] An toàn: nếu sau khi Add bạn chưa gọi updateCounters()
- * thì khối này sẽ gắn vào nút Add để cập nhật ngay.
- * (Không trùng lặp; nếu bạn đã gọi ở nơi khác thì cũng ok)
- * ========================================================== */
-(function ensureCounterAfterAdd(){
-  const btnAdd = document.getElementById('btnAddFromPreview');
-  if (!btnAdd) return;
-  btnAdd.addEventListener('click', () => {
-    // gọi trễ 1 tick để đảm bảo localStorage đã được cập nhật
-    setTimeout(() => {
-      if (typeof updateCounters === 'function') updateCounters();
-    }, 0);
-  }, { capture: false });
-})();
 
-function __collectGridFrames() {
-  const cards = document.querySelectorAll('.card[data-path][data-frame]');
-  const out = [];
-  cards.forEach(card => {
-    const path  = card.getAttribute('data-path')  || '';
-    const frame = card.getAttribute('data-frame');
-    const parts = path.split('/').filter(Boolean);
-    const vcode = parts.length >= 2 ? parts[parts.length - 2] : null;
-    const n = frame != null ? parseInt(frame, 10) : NaN;
-    if (vcode && Number.isInteger(n) && n >= 0) {
-      out.push({ vcode, frame_idx: n });
-    }
-  });
-  return out;
+// Nếu có hàm rebindActionsForMode (đã dùng để gắn Add/Submit theo mode), bọc lại để render
+if (typeof window.rebindActionsForMode === 'function') {
+  const __oldRebindDP = window.rebindActionsForMode;
+  window.rebindActionsForMode = function(){
+    __oldRebindDP();
+    ensureDraftPanelUI();
+    renderDraftPanel();
+  };
 }
 
-/** # Hợp nhất: giữ thứ tự đã Add, sau đó bổ sung từ grid cho đủ 100 (không trùng) */
-function __buildFinalRowsFromAddAndGrid() {
-  const MAX = 100;
+// Sau mỗi lần bấm Add / Add Line, chúng ta đã gọi set vào localStorage → gọi renderDraftPanel()
+// Dưới đây “bọc nhẹ” các setter để auto-render.
 
-  // 1) Lấy danh sách đã Add (giữ thứ tự)
-  const added = getRows(); // [{vcode, frame_idx}, ...] — từ localStorage
-
-  // 2) Lấy danh sách grid theo DOM hiện tại
-  const grid = __collectGridFrames();
-
-  // 3) Tạo tập kiểm trùng (khóa 'vcode#frame')
-  const seen = new Set();
-  const key = (r) => `${r.vcode}#${r.frame_idx}`;
-
-  const finalRows = [];
-  // 3.1) Đưa phần đã Add lên trước theo đúng thứ tự Add
-  for (const r of added) {
-    const k = key(r);
-    if (!seen.has(k)) {
-      finalRows.push(r);
-      seen.add(k);
-      if (finalRows.length >= MAX) return finalRows;
-    }
-  }
-
-  // 3.2) Bổ sung từ grid theo thứ tự hiển thị, bỏ qua cái đã có
-  for (const r of grid) {
-    const k = key(r);
-    if (!seen.has(k)) {
-      finalRows.push(r);
-      seen.add(k);
-      if (finalRows.length >= MAX) return finalRows;
-    }
-  }
-
-  // 3.3) Nếu vẫn chưa đủ (hiếm), lặp lại phần tử cuối cùng
-  if (finalRows.length > 0) {
-    while (finalRows.length < MAX) finalRows.push(finalRows[finalRows.length - 1]);
-  }
-  return finalRows;
+// KIS
+if (typeof window.kis_rows_set === 'function' && !window.__wrap_kis_rows_set_for_preview) {
+  const _old = window.kis_rows_set;
+  window.kis_rows_set = function(a){ _old(a); renderDraftPanel(); };
+  window.__wrap_kis_rows_set_for_preview = true;
 }
-
-/** # Gửi CSV + dọn bộ nhớ */
-async function __submitKIS_usingGrid() {
-  // 1) Xây 100 dòng theo yêu cầu
-  const rows100 = __buildFinalRowsFromAddAndGrid();
-
-  // 2) Lấy tên file (nếu có)
-  const fn = (typeof getFname === 'function' ? (getFname() || 'submit_kis.csv') : 'submit_kis.csv');
-
-  // 3) Gửi lên server (vẫn /export/kis như cũ)
-  const res = await fetch('/export/kis', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rows: rows100, filename: fn })
-  });
-
-  if (!res.ok) {
-    const t = await res.text();
-    alert('Export failed: ' + t);
-    return;
-  }
-
-  // 4) Tải file
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = fn;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-
-  // 5) XÓA BỘ NHỚ TẠM + cập nhật đồng hồ + (tùy) disable nút Add
-  try {
-    setRows([]);                 // xóa danh sách đã Add
-    if (typeof updateCounters === 'function') updateCounters();
-    const btnAdd = document.getElementById('btnAddFromPreview');
-    if (btnAdd) btnAdd.disabled = true;  // sau submit, tắt Add tới khi chọn lại
-  } catch (e) {
-    console.warn('cleanup after submit failed:', e);
-  }
+// QA
+if (typeof window.qa_rows_set === 'function' && !window.__wrap_qa_rows_set_for_preview) {
+  const _old = window.qa_rows_set;
+  window.qa_rows_set = function(a){ _old(a); renderDraftPanel(); };
+  window.__wrap_qa_rows_set_for_preview = true;
 }
-
-/** # Bắt nút Submit ở pha CAPTURE để chặn handler cũ và dùng logic mới
- *   Không cần sửa code cũ: listener này chạy trước và stopImmediatePropagation()
- */
-(function hijackSubmitButton(){
-  const btnSubmit = document.getElementById('btnSubmitCSV');
-  if (!btnSubmit) return;
-
-  btnSubmit.addEventListener('click', (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    ev.stopImmediatePropagation(); // chặn các listener đã gắn trước đó
-    __submitKIS_usingGrid().catch(err => alert(err));
-  }, { capture: true }); // chạy sớm ở pha capture để đảm bảo chặn được
-})();function __collectGridFrames() {
-  const cards = document.querySelectorAll('.card[data-path][data-frame]');
-  const out = [];
-  cards.forEach(card => {
-    const path  = card.getAttribute('data-path')  || '';
-    const frame = card.getAttribute('data-frame');
-    const parts = path.split('/').filter(Boolean);
-    const vcode = parts.length >= 2 ? parts[parts.length - 2] : null;
-    const n = frame != null ? parseInt(frame, 10) : NaN;
-    if (vcode && Number.isInteger(n) && n >= 0) {
-      out.push({ vcode, frame_idx: n });
-    }
-  });
-  return out;
+// TRAKE rows
+if (typeof window.tk_rows_set === 'function' && !window.__wrap_tk_rows_set_for_preview) {
+  const _old = window.tk_rows_set;
+  window.tk_rows_set = function(a){ _old(a); renderDraftPanel(); };
+  window.__wrap_tk_rows_set_for_preview = true;
 }
-
-/** # Hợp nhất: giữ thứ tự đã Add, sau đó bổ sung từ grid cho đủ 100 (không trùng) */
-function __buildFinalRowsFromAddAndGrid() {
-  const MAX = 100;
-
-  // 1) Lấy danh sách đã Add (giữ thứ tự)
-  const added = getRows(); // [{vcode, frame_idx}, ...] — từ localStorage
-
-  // 2) Lấy danh sách grid theo DOM hiện tại
-  const grid = __collectGridFrames();
-
-  // 3) Tạo tập kiểm trùng (khóa 'vcode#frame')
-  const seen = new Set();
-  const key = (r) => `${r.vcode}#${r.frame_idx}`;
-
-  const finalRows = [];
-  // 3.1) Đưa phần đã Add lên trước theo đúng thứ tự Add
-  for (const r of added) {
-    const k = key(r);
-    if (!seen.has(k)) {
-      finalRows.push(r);
-      seen.add(k);
-      if (finalRows.length >= MAX) return finalRows;
-    }
-  }
-
-  // 3.2) Bổ sung từ grid theo thứ tự hiển thị, bỏ qua cái đã có
-  for (const r of grid) {
-    const k = key(r);
-    if (!seen.has(k)) {
-      finalRows.push(r);
-      seen.add(k);
-      if (finalRows.length >= MAX) return finalRows;
-    }
-  }
-
-  // 3.3) Nếu vẫn chưa đủ (hiếm), lặp lại phần tử cuối cùng
-  if (finalRows.length > 0) {
-    while (finalRows.length < MAX) finalRows.push(finalRows[finalRows.length - 1]);
-  }
-  return finalRows;
+// TRAKE draft
+if (typeof window.tk_draft_set === 'function' && !window.__wrap_tk_draft_set_for_preview) {
+  const _old = window.tk_draft_set;
+  window.tk_draft_set = function(s){ _old(s); renderDraftPanel(); };
+  window.__wrap_tk_draft_set_for_preview = true;
 }
-
-/** # Gửi CSV + dọn bộ nhớ */
-async function __submitKIS_usingGrid() {
-  // 1) Xây 100 dòng theo yêu cầu
-  const rows100 = __buildFinalRowsFromAddAndGrid();
-
-  // 2) Lấy tên file (nếu có)
-  const fn = (typeof getFname === 'function' ? (getFname() || 'submit_kis.csv') : 'submit_kis.csv');
-
-  // 3) Gửi lên server (vẫn /export/kis như cũ)
-  const res = await fetch('/export/kis', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rows: rows100, filename: fn })
-  });
-
-  if (!res.ok) {
-    const t = await res.text();
-    alert('Export failed: ' + t);
-    return;
-  }
-
-  // 4) Tải file
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = fn;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-
-  // 5) XÓA BỘ NHỚ TẠM + cập nhật đồng hồ + (tùy) disable nút Add
-  try {
-    setRows([]);                 // xóa danh sách đã Add
-    if (typeof updateCounters === 'function') updateCounters();
-    const btnAdd = document.getElementById('btnAddFromPreview');
-    if (btnAdd) btnAdd.disabled = true;  // sau submit, tắt Add tới khi chọn lại
-  } catch (e) {
-    console.warn('cleanup after submit failed:', e);
-  }
-}
-
-/** # Bắt nút Submit ở pha CAPTURE để chặn handler cũ và dùng logic mới
- *   Không cần sửa code cũ: listener này chạy trước và stopImmediatePropagation()
- */
-(function hijackSubmitButton(){
-  const btnSubmit = document.getElementById('btnSubmitCSV');
-  if (!btnSubmit) return;
-
-  btnSubmit.addEventListener('click', (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    ev.stopImmediatePropagation(); // chặn các listener đã gắn trước đó
-    __submitKIS_usingGrid().catch(err => alert(err));
-  }, { capture: true }); // chạy sớm ở pha capture để đảm bảo chặn được
-})();
-
-// (G) HÀM MỚI: điều hướng tới trang allframes
-function goAllFrames(vcode) {
-  // Xây URL /allframes?vcode=...
-  const url = `/allframes?vcode=${encodeURIComponent(vcode)}`;
-  // Mở tab mới hoặc điều hướng thẳng (tuỳ ý)
-  window.open(url, '_blank'); // mở tab mới để tiện so sánh
-}
-
