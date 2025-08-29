@@ -278,7 +278,7 @@ function qa_submit() {
   const rows = qa_rows_get();
   if (!rows.length) return alert('Danh sách trống. Hãy Add ít nhất 1 dòng.');
   const lines = rows.map(it => `${it.video}, ${it.frame}, "${it.answer}"`).join('\n');
-  const blob = new Blob([lines], { type:'text/csv;charset=utf-8;' });
+  const blob = new Blob(["\uFEFF" + rows.join('\n')], { type:'text/csv;charset=utf-8;' });
   const a = Object.assign(document.createElement('a'), { href:URL.createObjectURL(blob), download:'qa_submission.csv' });
   a.click();
 }
@@ -736,6 +736,8 @@ function renderDraftPanel() {
   }
 }
 
+
+
 /** (3) Kết nối vòng đời: vẽ lại khi:
  *  - DOM sẵn sàng
  *  - đổi mode (rebindActionsForMode đã có)
@@ -782,4 +784,72 @@ if (typeof window.tk_draft_set === 'function' && !window.__wrap_tk_draft_set_for
   const _old = window.tk_draft_set;
   window.tk_draft_set = function(s){ _old(s); renderDraftPanel(); };
   window.__wrap_tk_draft_set_for_preview = true;
+}
+(function enhanceAddFileButton(){
+  const btn = document.getElementById('btnSetFilename');
+  if (!btn) return;
+  const hint = document.getElementById('csvFilenameHint');
+
+  btn.addEventListener('click', () => {
+    const mode = getMode();
+    let suggest = '';
+
+    if (mode === 'kis')   suggest = 'query-1-kis.csv';
+    if (mode === 'qa')    suggest = 'query-2-qa.csv';
+    if (mode === 'trake') suggest = 'query-3-trake.csv';
+
+    const cur = (mode === 'kis') ? (kis_fname_get() || suggest) : suggest;
+    const msg = `Đặt tên file CSV (${mode.toUpperCase()}):\n\nGợi ý:\n- KIS   → query-1-kis.csv\n- Q&A   → query-2-qa.csv\n- Trake → query-3-trake.csv\n\nBạn có thể giữ gợi ý hoặc nhập tên khác:`;
+    const name = prompt(msg, cur);
+
+    if (name !== null && name.trim()) {
+      if (mode === 'kis') {
+        kis_fname_set(name.trim());
+      } else {
+        // QA/Trake không có hàm đặt tên riêng -> chỉ hiển thị hint
+        localStorage.setItem(mode + '_fname', name.trim());
+      }
+      if (hint) hint.textContent = `(${mode.toUpperCase()} mode) ${name.trim()}`;
+    }
+  });
+})();
+
+/* ======================================================================
+ * PATCH: Dùng tên file đã chọn cho cả QA & TRAKE khi Submit
+ * ====================================================================== */
+
+function qa_fname_get() { return localStorage.getItem('qa_fname') || 'query-2-qa.csv'; }
+function trake_fname_get() { return localStorage.getItem('trake_fname') || 'query-3-trake.csv'; }
+
+// Ghi đè nhẹ submit QA để dùng tên file
+if (typeof qa_submit === 'function') {
+  const __old_qa_submit = qa_submit;
+  qa_submit = function() {
+    const rows = qa_rows_get();
+    if (!rows.length) return alert('Danh sách trống. Hãy Add ít nhất 1 dòng.');
+    const lines = rows.map(it => `${it.video}, ${it.frame}, "${it.answer}"`).join('\n');
+    const fn = qa_fname_get();
+    const blob = new Blob([lines], { type:'text/csv;charset=utf-8;' });
+    const a = Object.assign(document.createElement('a'), { href:URL.createObjectURL(blob), download: fn });
+    a.click();
+  };
+}
+
+// Ghi đè nhẹ submit Trake để dùng tên file
+if (typeof tk_submit_all === 'function') {
+  const __old_tk_submit_all = tk_submit_all;
+  tk_submit_all = function() {
+    const rows = tk_rows_get();
+    const s = tk_draft_get();
+    if (s && s.video && Array.isArray(s.frames) && !s.frames.some(x => x==null)) {
+      const addNow = confirm('Draft hiện tại đã đủ frame. Thêm vào danh sách trước khi Submit không?');
+      if (addNow) { rows.push({ video:s.video, frames:s.frames.slice(), N:s.N }); }
+    }
+    if (!rows.length) return alert('Chưa có dòng nào. Hãy bấm "Add Line" sau khi gán đủ N frame.');
+    const lines = rows.map(r => [r.video, ...r.frames].join(', ')).join('\n');
+    const fn = trake_fname_get();
+    const blob = new Blob([lines], { type:'text/csv;charset=utf-8;' });
+    const a = Object.assign(document.createElement('a'), { href:URL.createObjectURL(blob), download: fn });
+    a.click();
+  };
 }

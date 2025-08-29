@@ -29,13 +29,10 @@ Video Search App
 
 🚀 Cách chạy
 1. Clone repository
-git clone https://github.com/BrianK-116/DanLP_ngu.git
-cd Video_search_app
+Tai file di thg lon
 
 2. Tạo môi trường ảo
-python -m venv venv
-source venv/bin/activate   # Linux/MacOS
-venv\Scripts\activate      # Windows
+conda env create -f environment.yml
 
 3. Cài đặt thư viện
 pip install -r requirements.txt
