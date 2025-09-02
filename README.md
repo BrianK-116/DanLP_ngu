@@ -3,7 +3,7 @@ Video Search App
 Ứng dụng tìm kiếm video theo hình ảnh và văn bản, được xây dựng bằng Flask + FAISS + CLIP.
 
 📂 Cấu trúc thư mục
-.
+```
 ├── app.py                  # Flask backend chính
 ├── utils/                  # Tiện ích: FAISS, xử lý query
 │   ├── faiss.py
@@ -26,7 +26,7 @@ Video Search App
 ├── image_path.json         # Map ID → đường dẫn keyframe
 └── dict/
     └── vietnamese-stopwords-dash.txt
-
+```
 🚀 Cách chạy
 1. Clone repository
 Tai file di thg lon
