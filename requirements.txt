@@ -1,16 +1,30 @@
-googletrans==4.0.0
-flask==3.1.1
-numpy==2.0.2
-pandas==2.0.3
-opencv-python==4.11.0.86
-underthesea==6.8.4?
-pyvi==0.1.1
-translate==3.6.1
-faiss-cpu==1.11.0
-ftfy==6.1.1
-regex==2023.8.8
-tqdm==4.66.1
-matplotlib== 3.6.0
-langdetect==1.0.9
-rapidfuzz==3.13.0
-transformers-4.52.4
+# === Web framework ===
+Flask==3.0.3
+Werkzeug==3.0.3
+Jinja2==3.1.4
+
+# === Machine Learning / Deep Learning ===
+torch>=2.3.0
+torchvision>=0.18.0
+transformers>=4.43.0
+sentencepiece>=0.2.0
+
+# === Vector Search ===
+faiss-cpu>=1.8.0   # dùng CPU
+# faiss-gpu>=1.8.0.post1   # uncomment nếu chạy GPU + CUDA
+
+# === OCR ===
+easyocr==1.7.1
+opencv-python>=4.10.0.84
+Pillow>=10.4.0
+
+# === Xử lý dữ liệu ===
+numpy>=1.26.4
+pandas>=2.2.2
+
+# === Dịch ngôn ngữ (fallback) ===
+googletrans==4.0.0rc1
+
+# === Tiện ích khác ===
+tqdm>=4.66.5
+scikit-learn>=1.5.1

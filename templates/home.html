@@ -1,244 +1,521 @@
-<html>
-<head> <!-- It's best practice to have <head> instead of <header> for metadata -->
-    <meta charset="utf-8">
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-    <title>AIO-IR system</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UTEvuive_search</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}">
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body onload="on_load();">
-    <style>
-        /* --- General and Button Styles (Unchanged) --- */
-        *{
-            margin: 0;
-            box-sizing: border-box; /* Add this for more predictable sizing */
-        }
-        body{
-          margin: 0;
-          font-family: sans-serif;
-        }
-        
-        .custom-btn {
-          color: #fff;
-          border-radius: 5px;
-          font-family: 'Lato', sans-serif;
-          background: transparent;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          position: relative;
-          display: inline-block;
-          box-shadow:inset 2px 2px 2px 0px rgba(255,255,255,.5),
-          7px 7px 20px 0px rgba(0,0,0,.1),
-          4px 4px 5px 0px rgba(0,0,0,.1);
-          outline: none;
-        }
 
-        .btn-13 {
-          background-color: #89d8d3;
-          background-image: linear-gradient(315deg, #89d8d3 0%, #03c8a8 74%);
-          border: none;
-          z-index: 1;
-        }
-        .btn-13:after {
-          position: absolute; content: ""; width: 100%; height: 0; bottom: 0;
-          left: 0; z-index: -1; border-radius: 5px; background-color: #4dccc6;
-          background-image: linear-gradient(315deg, #4dccc6 0%, #96e4df 74%);
-          box-shadow: -7px -7px 20px 0px #fff9, -4px -4px 5px 0px #fff9,
-          7px 7px 20px 0px #0002, 4px 4px 5px 0px #0001;
-          transition: all 0.3s ease;
-        }
-        .btn-13:hover { color: #fff; }
-        .btn-13:hover:after { top: 0; height: 100%; }
-        .btn-13:active { top: 2px; }
 
-        .container{
-          width: 100%;
-          min-height: 100vh; /* Ensure it takes full viewport height */
-          background-color: #e0e5ec;
-        }
-        
-        /* --- Search Bar and Options Styles (Unchanged) --- */
-        .search_container{
-          width: 100%;
-          padding: 20px 0;
-          border-bottom: 5px solid #4dccc6;
-        }
-        .search{
-          width: 95%; margin: auto; display: flex; align-items: center;
-        }
-        .search label{ font-size: 30px; padding: 10px; }
-        .search input[type="text"]{
-          flex-grow: 1; height: 50px; border: none; border-radius: 10px;
-          padding-left: 1%; font-size: 20px;
-        }
-        .search button{
-          width: 130px; height: 50px; border-radius: 10px; margin-left: 20px;
-          color: white; font-size: 20px;
-        }
-        .search_options {
-            text-align: center; margin-top: 15px; color: #333;
-            font-size: 16px;
-        }
-        .search_options label { margin: 0 15px 0 5px; cursor: pointer; }
-        
-        /* --- Image Grid and Hover Effect Styles (MODIFIED) --- */
-        #div_img {
-            display: flex;
-            flex-direction: row;    
-            flex-wrap: wrap;
-            padding: 20px;
-            background-color: #e0e5ec;
-            justify-content: center; /* Center the images in the container */
-        }
-    
-        .container_img_btn {
-            position: relative; /* This is essential */
-            width: 300px; /* Fixed width for consistency */
-            margin: 10px; /* Spacing between images */
-            cursor: pointer;
-            overflow: hidden; /* Keeps sharp corners */
-            border-radius: 5px;
-        }
-        
-        .container_img_btn img {
-            width: 100%;
-            height: auto;
-            display: block; /* Removes bottom space */
-            transition: opacity 0.3s ease;
-        }
-    
-        .container_img_btn .btn_knn {
-            /* Button is now always present, but starts invisible */
-            opacity: 0; 
-            visibility: hidden;
+<body class="bg-slate-50 text-slate-800">
+  <!-- Header -->
+  <header class="bg-white border-b px-6 py-3">
+    <div class="flex items-center gap-3">
+      <a href="{{ url_for('home') }}" class="flex items-center gap-2 font-semibold">
+        <img src="{{ url_for('static', filename='images/logo.png') }}"
+             alt="Logo"
+             class="inline-block w-12 h-12 rounded-full">
+        <span>UTE vui vẻ tìm kiếm</span>
+      </a>
+      <nav class="ml-auto hidden md:flex gap-2 text-sm">
+        <span class="px-3 py-1 rounded hover:bg-slate-100 cursor-default">Docs</span>
+        <span class="px-3 py-1 rounded hover:bg-slate-100 cursor-default">Dataset</span>
+        <span class="px-3 py-1 rounded hover:bg-slate-100 cursor-default">About</span>
+      </nav>
+    </div>
+  </header>
 
-            /* These styles center the button */
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            
-            background-color: #4dccc6;
-            color: white;
-            font-size: 16px;
-            padding: 8px 15px;
-            border-radius: 5px;
-            text-align: center;
-            border: 2px solid white;
-            z-index: 10; /* Ensure button is on top of the image */
-            transition: opacity 0.3s ease, visibility 0.3s ease;
-        }
-    
-        /* --- The CSS Magic for the Hover Effect --- */
-        /* When you hover over the CONTAINER... */
-        .container_img_btn:hover .btn_knn {
-            /* ...make the button VISIBLE */
-            opacity: 1;
-            visibility: visible;
-        }
-    
-        .container_img_btn:hover img {
-            /* ...and dim the image underneath */
-            opacity: 0.6;
-        }
-    </style>
-    <div class="container">
-        <form action="/textsearch" method="GET" onsubmit="search(event);">
-            <div class="search_container">
-              <div class="search">
-                <label for="text_query">
-                  <i class="fa fa-search" aria-hidden="true"></i>
-                </label>
-                <input id="text_query" name="textquery" type="text" placeholder="Search for anything...">
-                <button class="custom-btn btn-13" type="submit"><span>Search</span></button>
-              </div>
+  <!-- Toolbar -->
+  <section class="toolbar-sticky px-4 pt-5 pb-3 border-b">
+    <div class="flex flex-col md:flex-row md:items-center gap-3">
+      <!-- Tabs -->
+      <div class="bg-white border rounded p-1 box flex gap-1">
+        <!-- KIS: chuyển sang trang /kis -->
+        <a href="/kis" class="px-3 py-1 rounded border bg-blue-50 text-blue-700 text-sm">KIS</a>
+        <!-- Trake (đổi tên từ AVS theo yêu cầu): /trake -->
+        <a href="/trake" class="px-3 py-1 rounded hover:bg-slate-100 text-sm">Trake</a>
+        <!-- Q&A: /qa -->
+        <a href="/qa" class="px-3 py-1 rounded hover:bg-slate-100 text-sm">Q&A</a>
+      </div>
 
-              <div class="search_options">
-                  <strong>Search Type:</strong>
-                  <input type="radio" id="hybrid" name="search_type" value="hybrid" checked>
-                  <label for="hybrid">Hybrid (Best)</label>
-              
-                  <input type="radio" id="visual" name="search_type" value="visual">
-                  <label for="visual">Normal</label>
-              
-                  <input type="radio" id="ocr" name="search_type" value="ocr">
-                  <label for="ocr">OCR</label>
+      <!-- Dataset -->
+      <select class="bg-white border rounded px-2 py-2">
+        <option>AIC25 (Keyframes)</option>
+        <option>LSC</option>
+        <option>V3C1</option>
+      </select>
+
+      <!-- Search form -->
+      <form action="{{ url_for('textsearch') }}" method="get" class="relative flex-1">
+        <input
+          name="textquery"
+          type="text"
+          value="{{ ui.textquery if ui else '' }}"
+          placeholder="Describe scene / text... (vi/en)"
+          class="w-full bg-white border rounded px-3 py-3 pr-28 box"
+          autocomplete="off">
+        <div class="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
+          <button type="submit" class="btn-blue">Search</button>
+        </div>
+        <input type="hidden" name="search_type" value="{{ ui.search_type if ui else 'visual' }}">
+        <input type="hidden" name="topk"        value="{{ ui.topk if ui else 100 }}">
+        <input type="hidden" name="index"       value="0">
+      </form>
+    </div>
+
+    <!-- Chips -->
+    <div class="mt-2 flex items-center gap-2 text-xs">
+      <span class="text-slate-500">Examples:</span>
+      <button type="button" class="chip ex">biển hoàng hôn có thuyền</button>
+      <button type="button" class="chip ex">man holding red umbrella</button>
+      <button type="button" class="chip ex">text: cafe open 24h</button>
+    </div>
+  </section>
+
+  <!-- Main: layout 3 cột -->
+  <main class="px-6 pt-4 pb-10 flex gap-4">
+
+    <!-- ===== LEFT: FILTERS (sticky) ===== -->
+    <aside class="shrink-0 w-[12.5vw] min-w-[220px]
+                    lg:sticky lg:top-20 self-start
+                  max-h-[calc(100vh-6rem)] overflow-auto
+                  bg-white border rounded p-3 box">
+      <div class="text-sm font-semibold mb-2">Filters</div>
+
+      <!-- Search type -->
+      <div class="mb-3">
+        <div class="text-sm mb-1">Search type</div>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="border rounded p-2 flex gap-2 items-center">
+            <input type="radio" name="stype" value="visual" {{ 'checked' if (ui and ui.search_type=='visual') or (not ui) else '' }}>
+            <span class="text-sm">Visual</span>
+          </label>
+          <label class="border rounded p-2 flex gap-2 items-center">
+            <input type="radio" name="stype" value="ocr" {{ 'checked' if (ui and ui.search_type=='ocr') else '' }}>
+            <span class="text-sm">Text</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Top-K -->
+      <div class="mb-3">
+        <div class="text-sm mb-1">Top-K</div>
+        <input id="topk" type="range" min="10" max="500" step="10"
+               value="{{ ui.topk if ui else 100 }}" class="w-full">
+        <div class="flex justify-between text-xs text-slate-500">
+          <span>10</span><span id="topkLabel">{{ ui.topk if ui else 100 }}</span><span>500</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== CENTER: Kết quả / ALLFRAMES ===== -->
+    <section class="flex-1 min-w-0">
+      {% if mode == 'allframes' %}
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-xl font-semibold">
+            Toàn bộ frames của video:
+            <span class="text-blue-600">{{ current_vcode }}</span>
+          </h2>
+          <a href="{{ url_for('home') }}" class="px-3 py-2 rounded border hover:bg-gray-50">
+            ← Về trang tìm kiếm
+          </a>
+        </div>
+
+        <!-- GRID xuống dòng; mỗi ảnh là 1 'card' giống trang home -->
+        <div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(180px,1fr));">
+          {% for r in flat_items %}
+            <div class="card border rounded overflow-hidden bg-white cursor-pointer"
+                tabindex="0"
+                data-id="{{ r.id }}"
+                data-path="{{ r.path }}"
+                data-score="{{ r.get('score', 0.0) if r.get else r.score or 0.0 }}"
+                data-frame="{{ r.frame }}"
+                onclick="onPick(this)"
+                onkeydown="if(event.key==='Enter'||event.key===' '){onPick(this)}">
+
+              <img
+                src="{{ url_for('get_img', fpath=r['path']) }}"
+                alt="id {{ r['id'] }}"
+                class="w-full aspect-video object-cover"
+                loading="lazy" />
+
+              <div class="px-2 py-1 text-xs flex items-center justify-between">
+                <span class="font-mono">n={{ r.frame }}</span>
+                <a class="px-2 py-0.5 rounded border hover:bg-gray-50"
+                  href="/imgsearch?imgid={{ r.id }}">Similar</a>
               </div>
             </div>
-        </form>
-
-        <div id="div_img">
-            <!-- Images will be injected here by JavaScript -->
-        </div>
-  
-        <div style="height: 5px; width: 100%; background-color: black;"></div>
-        <div id="div_page">
-            <!-- Pagination will be injected here -->
-        </div>
-        <div id="div_total_page"></div>
-        <div style="margin-bottom: 50px;"></div>
-  
+          {% endfor %}
       </div>
-    <script>
-        // Use 'let' or 'const' instead of 'var' for modern JavaScript
-        const data = JSON.parse('{{ data|tojson|safe }}');
+      {% else %}
+        <!-- (B) Trạng thái mặc định: strip theo VIDEO + phân nhóm như cũ -->
+        <div class="flex items-center justify-between text-sm text-slate-500 mb-2">
+          <div><b class="text-slate-700">{{ total or 0 }}</b> results in {{ elapsed or 0 }} ms</div>
+          <div class="flex items-center gap-2">
+            <span>Sort</span>
+            <select class="border rounded px-2 py-1">
+              <option>Score (desc)</option>
+              <option>ID (asc)</option>
+            </select>
+          </div>
+        </div>
         
-        function add_paging(){
-            // Your paging function is fine, no changes needed here.
-            // ...
-        }
-        
-        // --- MODIFIED add_img() FUNCTION ---
-        function add_img(){
-            const pagefile_list = data['pagefile'];
-            if (!pagefile_list) return; // Guard clause
-            
-            // We removed the onmouseover/onmouseout attributes from the div
-            pagefile_list.forEach((item, index) => {
-                $("#div_img").append(
-                    `<div class="container_img_btn">
-                        <button class="btn_knn" onClick="go_img_search(${item.id})">Find Similar</button>
-                        <img class="hoverImg" src="get_img?fpath=${item.imgpath}">
-                    </div>`
-                )
-            });
-        }
-        
-        // --- DELETED JAVASCRIPT FUNCTIONS ---
-        // The mouseOver() and mouseOut() functions are no longer needed
-        // as their functionality is now handled entirely by CSS.
+        {% if groups %}
+          {% for vcode, items in groups %}
+          <div class="mb-4 bg-white border rounded box">
+            <!-- Header của hàng -->
+            <div class="flex items-center justify-between px-3 py-2 border-b">
+              <div class="text-sky-600 font-semibold">{{ vcode }}</div>
+              <div class="text-xs text-slate-500">{{ items|length }} frames</div>
+            </div>
 
-        function go_img_search(id){
-            // Use _self to open in the same tab, which is usually better UX
-            window.open("/imgsearch?imgid="+id, "_self"); 
-        }
+            <!-- Strip keyframes ngang (scroll khi dài) -->
+            <div class="px-2 py-2 grid grid-flow-col auto-cols-[160px] gap-2 overflow-x-auto">
+              {% for r in items %}
+              <div class="card border rounded overflow-hidden bg-white cursor-pointer"
+                  tabindex="0"
+                  data-id="{{ r['id'] }}"
+                  data-path="{{ r['path'] }}"
+                  data-score="{{ r.get('score', 0.0) }}"
+                  data-frame="{{ r.get('frame', 0) }}"
+                  onclick="onPick(this)"
+                  onkeydown="if(event.key==='Enter'||event.key===' '){onPick(this)}">
+                <img
+                  src="{{ url_for('get_img', fpath=r['path']) }}"
+                  alt="id {{ r['id'] }}"
+                  class="w-[160px] h-[100px] object-cover"
+                  loading="lazy">
+                <div class="px-1 py-1 text-[11px] text-slate-600 flex justify-between">
+                  <span>{{ '%03d'|format(r.get('frame', 0)) }}</span>
+                  <span>{{ '%.4f'|format(r.get('score', 0.0)) }}</span>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-sm text-slate-500">No results.</div>
+        {% endif %}
+         {% endif %}
+      <!-- Kết thúc CENTER -->
+    </section>
 
-        function on_load(){
-            const url = new URL(window.location.href);
-            // Set the search box value if a query was performed
-            if (url.searchParams.has("textquery")){
-              document.getElementById("text_query").value = url.searchParams.get("textquery");
-            }
-            // Set the radio button to the correct search type
-            if (url.searchParams.has("search_type")){
-                const searchType = url.searchParams.get("search_type");
-                document.querySelector(`input[name="search_type"][value="${searchType}"]`).checked = true;
-            }
-            
-            add_paging();
-            add_img();
-        }
+    <!-- ===== RIGHT: PREVIEW (sticky) ===== -->
+    <aside class="shrink-0 w-[24vw] min-w-[300px]
+                  lg:sticky lg:top-20 self-start
+                  max-h-[calc(100vh-6rem)] overflow-auto
+                  bg-white border rounded p-3 box">
+      <!-- khung media -->
+      <div class="w-full aspect-video bg-slate-100 rounded flex items-center justify-center overflow-hidden">
+        <img id="pvImg" src="" alt="preview" class="max-w-full max-h-full hidden">
+        <video id="pvVid" controls class="w-full h-full hidden"></video>
+        <span id="pvPh" class="text-slate-400 text-sm">Click một ảnh để xem chi tiết…</span>
+      </div>
 
-        function search(event){
-            // This function is fine, no changes needed.
-            event.preventDefault();
-            const text_query = document.getElementById('text_query').value;
-            const search_type = document.querySelector('input[name="search_type"]:checked').value;
-            const search_url = "/textsearch?textquery=" + encodeURIComponent(text_query) + "&search_type=" + search_type;
-            window.location.href = search_url;
-        }
+      <!-- details + actions -->
+      <div class="mt-3 text-sm">
+        <div class="font-semibold mb-2">Details</div>
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <div class="bg-slate-50 rounded p-2">ID<br><b id="pvId">—</b></div>
+          <div class="bg-slate-50 rounded p-2">Score<br><b id="pvScore">—</b></div>
+          <div class="bg-slate-50 rounded p-2">Timecode<br><b id="pvTime">—</b></div>
+        </div>
 
-    </script>
+        <button id="btnAddFromPreview"
+                class="mt-2 px-3 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40"
+                disabled>
+          Add
+        </button>
+
+        <div class="mt-1 text-sm text-slate-500">
+          Added: <span id="addedCount">0</span> / 100
+        </div>
+
+        <div class="mt-3 flex gap-2">
+          <a id="btnSimilar"
+             href="#"
+             class="px-3 py-2 rounded bg-blue-600 text-white text-xs hover:bg-blue-700 disabled:opacity-50"
+             aria-disabled="true">Find similar</a>
+          <button id="btnToggle"
+                  type="button"
+                  class="px-3 py-2 rounded border text-xs hover:bg-slate-50"
+                  disabled>Show video</button>
+        </div>
+      </div>
+
+      <div class="mt-3 sticky bottom-3 flex items-center gap-2">
+        <button id="btnSetFilename"
+                class="px-3 py-2 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-800">
+          Add File
+        </button>
+        <button id="btnSubmitCSV"
+                class="px-4 py-2 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-medium">
+          Submit
+        </button>
+        <span id="csvFilenameHint" class="ml-2 text-sm text-slate-500"></span>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-slate-100 border-t">
+    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+      <div class="text-sm text-slate-500">
+        &copy; 2025 UTEvui. All rights reserved.
+      </div>
+    </div>
+  </footer>
+
+  <!-- JS: đồng bộ form + ví dụ + onPick -->
+  <script defer>
+    // (1) Lấy form
+    const form = document.querySelector('form[action*="textsearch"]');
+
+    // (2) Đồng bộ hidden inputs mỗi khi đổi filter
+    const sync = () => {
+      if (!form) return;
+      const st = document.querySelector('input[name="stype"]:checked');
+      form.querySelector('input[name="search_type"]').value = st ? st.value : 'visual';
+      form.querySelector('input[name="topk"]').value        = document.getElementById('topk').value;
+      form.querySelector('input[name="index"]').value       = 0; // reset trang
+    };
+
+    // (3) Bắt sự kiện radio/slider
+    document.querySelectorAll('input[name="stype"]').forEach(r => r.addEventListener('change', sync));
+    const topkEl = document.getElementById('topk');
+    if (topkEl) {
+      topkEl.addEventListener('input', () => {
+        document.getElementById('topkLabel').textContent = topkEl.value;
+        sync();
+      });
+    }
+
+    // (4) Chips ví dụ
+    document.querySelectorAll('.ex').forEach(b => b.addEventListener('click', () => {
+      const q = document.querySelector('input[name="textquery"]');
+      if (!q) return;
+      q.value = b.textContent.trim();
+      q.focus();
+    }));
+
+    document.addEventListener('DOMContentLoaded', sync);
+  </script>
+
+  <!-- nạp visual.js để có onPick() -->
+  <script src="{{ url_for('static', filename='js/visual.js') }}" defer></script>
+<!-- ====================== SUBMISSION MODES (KIS / Q&A / TRAKE) ====================== -->
+<script>
+  /* =========================================================================
+   * (0) HẠ TẦNG: đọc/ghi 'page_mode' (kis|qa|trake) + highlight tab
+   *  - Lưu vào URL (?page_mode=...) và localStorage để nhớ lần sau.
+   *  - Không điều hướng sang trang khác; chỉ đổi mode ngay trên home.
+   * ========================================================================= */
+
+  // Lấy mode từ URL hoặc localStorage (ưu tiên URL)
+  function getPageMode() {
+    const urlMode = new URL(location.href).searchParams.get('page_mode');
+    return (urlMode || localStorage.getItem('page_mode') || '').toLowerCase();
+  }
+
+  // Set mode → cập nhật URL (không reload), localStorage và style tab
+  function setPageMode(mode) {
+    // Chuẩn hoá giá trị
+    const m = (mode || '').toLowerCase();
+    if (!['kis', 'qa', 'trake'].includes(m)) return;
+
+    // Cập nhật URL nhưng không reload trang
+    const u = new URL(location.href);
+    u.searchParams.set('page_mode', m);
+    history.replaceState({}, '', u);
+
+    // Lưu lại để nhớ
+    localStorage.setItem('page_mode', m);
+
+    // Tô đậm tab đang chọn
+    highlightActiveTab(m);
+
+    // Reset đồng hồ Added hiển thị đúng theo draft của mode
+    if (m === 'kis')    kis_syncCount();
+    if (m === 'qa')     qa_syncCount();
+    if (m === 'trake')  tk_syncCount();
+
+    // Gợi ý nhỏ cạnh nút Submit
+    const hint = document.getElementById('csvFilenameHint');
+    if (hint) hint.textContent = m ? `(${m.toUpperCase()} mode)` : '';
+  }
+
+  // Thêm class để highlight tab tương ứng
+  function highlightActiveTab(mode) {
+    const tabs = {
+      kis:   document.querySelector('a[href="/kis"], a[data-tab="kis"]'),
+      qa:    document.querySelector('a[href="/qa"], a[data-tab="qa"]'),
+      trake: document.querySelector('a[href="/trake"], a[data-tab="trake"]')
+    };
+    // Bỏ highlight cũ
+    Object.values(tabs).forEach(a => a && a.classList.remove('border','bg-blue-50','text-blue-700'));
+    // Thêm highlight mới
+    if (tabs[mode]) tabs[mode].classList.add('border','bg-blue-50','text-blue-700');
+  }
+
+  // Gắn click cho 3 tab: chặn điều hướng, chỉ đổi mode
+  function wireTabs() {
+    const bind = (selector, mode) => {
+      const el = document.querySelector(selector);
+      if (!el) return;
+      el.addEventListener('click', (e) => {
+        e.preventDefault();          // chặn điều hướng /kis, /qa, /trake
+        setPageMode(mode);           // chỉ đổi mode
+      });
+      // Thêm data-tab để highlight nếu href thay đổi sau này
+      el.setAttribute('data-tab', mode);
+      // Đổi con trỏ để rõ là nút chọn
+      el.classList.add('cursor-pointer');
+    };
+    bind('a[href="/kis"]',   'kis');
+    bind('a[href="/qa"]',    'qa');
+    bind('a[href="/trake"]', 'trake');
+  }
+
+  /* =========================================================================
+   * (1) KIS — mảng draft: [{video, frame}] → CSV "<video>, <frame>"
+   * ========================================================================= */
+  function kis_get()  { try { return JSON.parse(localStorage.getItem('kisDraft') || '[]'); } catch { return []; } }
+  function kis_set(a) { localStorage.setItem('kisDraft', JSON.stringify(a.slice(0,100))); kis_syncCount(); }
+  function kis_syncCount(){
+    const c = document.getElementById('addedCount');
+    if (c) c.textContent = String(Math.min(kis_get().length, 100));
+  }
+  function kis_add(video, frameIdx){
+    const data = kis_get();
+    data.push({ video:String(video).trim(), frame: parseInt(frameIdx,10) || 0 });
+    kis_set(data);
+  }
+  function kis_export(){
+    const rows = kis_get().map(it => `${it.video}, ${it.frame}`);
+    if (!rows.length) return alert('Danh sách trống. Hãy Add ít nhất 1 dòng.');
+    const blob = new Blob([rows.join('\n')], { type:'text/csv;charset=utf-8;' });
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: 'kis_submission.csv'
+    }); a.click();
+  }
+
+  /* =========================================================================
+   * (2) Q&A — mảng draft: [{video, frame, answer}] → CSV '<video>, <frame>, "answer">'
+   * ========================================================================= */
+  function qa_get()  { try { return JSON.parse(localStorage.getItem('qaDraft') || '[]'); } catch { return []; } }
+  function qa_set(a) { localStorage.setItem('qaDraft', JSON.stringify(a.slice(0,100))); qa_syncCount(); }
+  function qa_syncCount(){
+    const c = document.getElementById('addedCount');
+    if (c) c.textContent = String(Math.min(qa_get().length, 100));
+  }
+  function qa_add(video, frameIdx, answer){
+    const ans = String(answer ?? '').trim().slice(0, 100); // BTC: ≤100 ký tự
+    const data = qa_get();
+    data.push({ video:String(video).trim(), frame: parseInt(frameIdx,10)||0, answer: ans });
+    qa_set(data);
+  }
+  function qa_export(){
+    const rows = qa_get().map(it => `${it.video}, ${it.frame}, "${it.answer}"`);
+    if (!rows.length) return alert('Danh sách trống. Hãy Add ít nhất 1 dòng.');
+    const blob = new Blob([rows.join('\n')], { type:'text/csv;charset=utf-8;' });
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: 'qa_submission.csv'
+    }); a.click();
+  }
+
+  /* =========================================================================
+   * (3) TRAKE — state: { video, frames:Array(N), N } → CSV '<video>, f1, ..., fN'
+   * ========================================================================= */
+  function tk_get() { try { return JSON.parse(localStorage.getItem('trakeDraft') || 'null'); } catch { return null; } }
+  function tk_set(s){ localStorage.setItem('trakeDraft', JSON.stringify(s)); tk_syncCount(); }
+  function tk_syncCount(){
+    const s = tk_get(); const c = document.getElementById('addedCount');
+    if (!c) return;
+    if (!s || !Array.isArray(s.frames)) { c.textContent = '0'; return; }
+    c.textContent = String(s.frames.filter(x => x!=null).length);
+  }
+  function tk_init(N){
+    const n = Math.max(1, parseInt(N,10) || 1);
+    tk_set({ video:'', frames:Array(n).fill(null), N:n });
+  }
+  function tk_setVideo(v){ const s = tk_get() || {video:'',frames:[],N:0}; s.video = String(v||'').trim(); tk_set(s); }
+  function tk_setAt(i1, frameIdx){
+    const s = tk_get(); if (!s) return alert('Chưa đặt số hành động (N).');
+    const i = parseInt(i1,10);
+    if (!(i>=1 && i<=s.N)) return alert(`Chỉ số i phải trong [1..${s.N}].`);
+    s.frames[i-1] = parseInt(frameIdx,10) || 0; tk_set(s);
+  }
+  function tk_export(){
+    const s = tk_get(); if (!s) return alert('Chưa có draft.');
+    if (!s.video) return alert('Chưa đặt tên video.');
+    if (s.frames.some(x => x==null)) return alert('Chưa đủ N frame cho tất cả hành động.');
+    const blob = new Blob([[s.video, ...s.frames].join(', ')], { type:'text/csv;charset=utf-8;' });
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: 'trake_submission.csv'
+    }); a.click();
+  }
+
+  /* =========================================================================
+   * (4) GẮN NÚT Add/Submit SẴN CÓ THEO MODE
+   *  - YÊU CẦU: visual.js đã đặt window.currentVcode & window.currentFrameIdx
+   *    khi click keyframe hoặc pause video.
+   * ========================================================================= */
+  document.addEventListener('DOMContentLoaded', () => {
+    // 4.1 Gắn tab chọn mode
+    wireTabs();
+
+    // 4.2 Thiết lập mode ban đầu
+    const startMode = getPageMode() || 'kis'; // mặc định vào KIS nếu chưa chọn
+    setPageMode(startMode);
+
+    // 4.3 Kích hoạt nút Add
+    const btnAdd = document.getElementById('btnAddFromPreview');
+    if (btnAdd) {
+      btnAdd.disabled = false;
+      btnAdd.addEventListener('click', () => {
+        const mode = getPageMode();
+        const v = window.currentVcode;
+        const f = window.currentFrameIdx;
+        if (!v || typeof f === 'undefined') {
+          alert('Hãy chọn 1 frame (hoặc pause video) trước khi Add.');
+          return;
+        }
+        if (mode === 'kis')   return kis_add(v, f);
+        if (mode === 'qa')   { const a = prompt('Nhập Answer (VN/EN, ≤100 ký tự):',''); if (a!==null) qa_add(v, f, a); return; }
+        if (mode === 'trake'){
+          // nếu chưa có state thì hỏi N lần đầu
+          if (!tk_get()) { const N = prompt('Nhập số hành động (N):','4'); tk_init(N||4); }
+          tk_setVideo(v);
+          const s = tk_get();
+          const i = prompt(`Gán vào hành động thứ mấy? (1..${s.N})`,'1');
+          if (i) tk_setAt(i, f);
+          return;
+        }
+        alert('Hãy chọn 1 mode: KIS / Q&A / Trake.');
+      });
+    }
+
+    // 4.4 Kích hoạt nút Submit
+    const btnSubmit = document.getElementById('btnSubmitCSV');
+    if (btnSubmit) {
+      btnSubmit.addEventListener('click', () => {
+        const mode = getPageMode();
+        if (mode === 'kis')   return kis_export();
+        if (mode === 'qa')    return qa_export();
+        if (mode === 'trake') return tk_export();
+        alert('Hãy chọn 1 mode: KIS / Q&A / Trake.');
+      });
+    }
+  });
+</script>
+<!-- ==================== /SUBMISSION MODES (KIS / Q&A / TRAKE) ==================== -->
+
 </body>
 </html>

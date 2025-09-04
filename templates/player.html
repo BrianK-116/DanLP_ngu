@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>Player – {{ vcode }}{% if frame is not none %} #{{ frame }}{% endif %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white">
+  <div class="max-w-5xl mx-auto p-4">
+    <div class="mb-2 text-sm text-slate-300">
+      <b>{{ vcode }}</b>
+      {% if frame is not none %} • frame {{ frame }}{% endif %}
+      {% if pts_time is not none %} • t ≈ {{ '%.3f'|format(pts_time) }}s{% endif %}
+    </div>
+
+    <video id="v" class="w-full rounded-lg shadow"
+           controls autoplay playsinline preload="metadata">
+      <source src="{{ video_src }}" type="video/mp4">
+    </video>
+    <div class="mt-4">
+      <button id="btnAddFromPlayer"
+              class="px-3 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white">
+        Add
+      </button>
+      <span class="ml-2 text-sm text-slate-400">Thêm frame này vào danh sách nộp</span>
+    </div>
+    <div class="mt-3 flex items-center gap-3">
+  <!-- Thông tin frame -->
+  <div class="text-sm text-slate-300">
+    Paused at: n=<span id="pausedN">—</span>,
+    frame_idx=<span id="pausedFI">—</span>
+  </div>
+  <!-- Nút Similar (đầu tiên là disabled cho tới khi xác định được imgid) -->
+    <a id="btnSimilarPaused"
+      class="px-3 py-2 rounded bg-blue-600 text-white text-xs hover:bg-blue-700 opacity-50 pointer-events-none"
+      href="#"
+      title="Find similar from paused frame">
+      Similar
+    </a>
+    <button id="btnAllFrames"
+            class="px-3 py-2 rounded-lg border hover:bg-gray-50 inline-flex items-center gap-2"
+            title="Xem toàn bộ keyframes của video này (đi tới frame đang dừng)">
+      Show all frames
+    </button>
+
+  </div>
+  
+
+<!-- [THÊM] Hiển thị đếm -->
+<div class="mt-1 text-sm text-slate-500">
+  Added: <span id="addedCountPlayer">0</span> / 100
+</div>
+  </div>
+
+  <script>
+    // fallback: nếu fragment không seek đúng, vẫn ép currentTime
+    const v = document.getElementById('v');
+    const t = {{ pts_time if pts_time is not none else 'null' }};
+    if (typeof t === 'number' && isFinite(t)) {
+      function seek() { try { v.currentTime = t; } catch(_) {} }
+      if (v.readyState < 1) {
+        v.addEventListener('loadedmetadata', seek, { once:true });
+      } else {
+        seek();
+      }
+    }
+  </script>
+    <script>
+    // =========================
+    // [THÊM] Logic bắt pause: tra frame gần nhất và bật nút Similar
+    // =========================
+
+    (function(){
+      // --- Lấy vcode từ querystring ---
+      const usp = new URLSearchParams(window.location.search);
+      const vcode = usp.get('vcode') || '';
+
+      // --- Các phần tử UI mới ---
+      const video = document.querySelector('video#pvVid') || document.querySelector('video'); // fallback
+      const elN   = document.getElementById('pausedN');
+      const elFI  = document.getElementById('pausedFI');
+      const btn   = document.getElementById('btnSimilarPaused');
+
+      if (!video || !vcode || !elN || !elFI || !btn) return;
+
+      // Helper bật/tắt nút Similar
+      function setSimilarDisabled(disabled) {
+        if (disabled) {
+          btn.classList.add('opacity-50','pointer-events-none');
+        } else {
+          btn.classList.remove('opacity-50','pointer-events-none');
+        }
+      }
+      setSimilarDisabled(true);
+
+      // --- Khi user pause video ---
+      video.addEventListener('pause', async () => {
+        try {
+          // 1) Lấy thời điểm đang dừng (giây, float)
+          const t = Number(video.currentTime || 0);
+
+          // 2) Gọi API /lookup_frame để lấy n & frame_idx gần nhất
+          const look = await fetch(`/lookup_frame?vcode=${encodeURIComponent(vcode)}&time=${encodeURIComponent(t.toFixed(3))}`);
+          if (!look.ok) { setSimilarDisabled(true); return; }
+          const jf = await look.json();
+          const n  = Number(jf?.n ?? 0);
+          const fi = Number(jf?.frame_idx ?? n);
+
+          // 3) Cập nhật UI
+          elN.textContent  = Number.isFinite(n)  ? n  : '—';
+          elFI.textContent = Number.isFinite(fi) ? fi : '—';
+
+          // 4) Gọi API /imgid_from_vcode_frame để tìm imgid từ (vcode, n)
+          const x = await fetch(`/imgid_from_vcode_frame?vcode=${encodeURIComponent(vcode)}&n=${encodeURIComponent(n)}`);
+          if (!x.ok) { setSimilarDisabled(true); return; }
+          const jx = await x.json();
+          const imgid = jx?.imgid;
+
+          // 5) Nếu có imgid -> bật nút Similar, trỏ về /imgsearch?imgid=...
+          if (Number.isInteger(imgid)) {
+            const url = new URL('/imgsearch', window.location.origin);
+            url.searchParams.set('imgid', String(imgid));
+            // Có thể bổ sung các tham số khác nếu bạn muốn duy trì ngữ cảnh tìm kiếm
+            btn.href = url.toString();
+            setSimilarDisabled(false);
+          } else {
+            setSimilarDisabled(true);
+          }
+        } catch (e) {
+          console.warn('pause lookup failed:', e);
+          setSimilarDisabled(true);
+        }
+      }, { passive: true });
+    })();
+  </script>
+  <script>
+  // (B) Bắt sự kiện click -> lấy currentTime -> đổi time -> n -> mở /allframes với target_n
+  (function () {
+    const btn = document.getElementById('btnAllFrames');
+    const v   = document.querySelector('video');          // thẻ <video> trong player
+    const vcode = "{{ vcode }}";                          // truyền sẵn từ server
+
+    async function goAllFramesAtPaused() {
+      try {
+        const t = v ? v.currentTime || 0 : 0;             // giây hiện tại
+        // Gọi API đổi time -> n (đã có sẵn trong app.py)
+        const res = await fetch(`/lookup_frame?vcode=${encodeURIComponent(vcode)}&time=${encodeURIComponent(t)}`);
+        const js  = await res.json();
+        const n   = (js && typeof js.n === 'number') ? js.n : 0;
+
+        // Mở trang allframes, kèm target_n để auto-scroll
+        const url = `/allframes?vcode=${encodeURIComponent(vcode)}&target_n=${encodeURIComponent(n)}`;
+        window.location.href = url;                       // điều hướng trong tab hiện tại
+      } catch (e) {
+        // Fallback: nếu lỗi, vẫn mở allframes không target
+        window.location.href = `/allframes?vcode=${encodeURIComponent(vcode)}`;
+      }
+    }
+
+    if (btn) btn.addEventListener('click', goAllFramesAtPaused);
+  })();
+</script>
+</body>
+</html>

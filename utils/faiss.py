@@ -53,9 +53,9 @@ class Myfaiss:
     # --- REPLACED AND UPGRADED TEXT_SEARCH METHOD ---
     #################################################################
     def text_search(self, text, k, search_type='hybrid'):
-        
-        # --- 1. Encode the User's Query (Same as before) ---
-        if detect(text) == 'vi':
+
+        # --- 1. Encode the User's Query If style search is visual (Same as before) ---
+        if detect(text) == 'vi' and search_type == 'visual':
             translated = self.translater.translate(text, dest='en')
             text = translated.text
         

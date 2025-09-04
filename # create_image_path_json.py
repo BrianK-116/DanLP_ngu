@@ -7,10 +7,10 @@ from tqdm import tqdm # A library for creating smart progress bars
 # --- 1. CONFIGURATION ---
 
 # The name of the main folder containing all your subfolders with images.
-ROOT_FOLDER = 'f:\AIC25\data\keyframes\Keyframes_L21\L21_V001'
+ROOT_FOLDER = 'data\keyframes'
 
 # The name of the JSON file you want to create.
-OUTPUT_JSON_FILE = 'image_path_L22.json'
+OUTPUT_JSON_FILE = 'image_path.json'
 
 # A set of common image file extensions to look for.
 # Using a set is slightly faster for checking. Add any other formats you have.
